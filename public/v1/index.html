@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Escape Room - Version 1</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>AI Escape Room <span class="tag">Version 1</span></h1>
+    <p>You wake up in Room 404: The Forgotten Lab. Type what you want to do.</p>
+    <a href="/">&larr; Back to version select</a>
+  </header>
+
+  <main>
+    <div id="chat"></div>
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="e.g. look around" />
+      <button type="submit">Send</button>
+      <button type="button" id="reset">Restart</button>
+    </form>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
