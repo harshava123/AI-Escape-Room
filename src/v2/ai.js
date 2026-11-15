@@ -1,6 +1,6 @@
 // The two per-turn jobs Gemini does in Version 2:
 //   1. understand free-form player text -> structured action (JSON schema)
-//   2. narrate an outcome the engine already decided
+//   2. narrate an outcome the engine already decide
 // Neither prompt contains the room's code or password.
 
 import { generate } from './gemini.js';
