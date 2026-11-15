@@ -2,14 +2,65 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AI Escape Room</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Escape Room - Version Select</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/v2/style.css" />
   <style>
-    body { font-family: Georgia, serif; background: #1d1d1d; color: #ddd; text-align: center; padding: 60px; }
-    a { display: inline-block; margin: 10px; padding: 12px 24px; background: #333; color: #fff; text-decoration: none; }
+    html, body { overflow: auto; }
+    .select { position: relative; z-index: 5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; }
+    .select h1 { font-size: clamp(2.4rem, 8vw, 5rem); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 340px)); gap: 24px; justify-content: center; margin-top: 30px; width: 100%; }
+    .card { display: block; text-decoration: none; color: var(--text); text-align: left; padding: 24px; transition: transform 0.2s, box-shadow 0.2s; }
+    .card:hover { transform: translateY(-6px); box-shadow: 0 0 30px rgba(0, 240, 255, 0.35); }
+    .card.v2 { border-color: var(--magenta); }
+    .card.v2:hover { box-shadow: 0 0 34px rgba(255, 43, 214, 0.45); }
+    .card h2 { font-family: var(--display); margin: 0 0 6px; font-size: 1.3rem; color: #fff; }
+    .card .tag { font-size: 0.65rem; letter-spacing: 0.25em; color: var(--muted); }
+    .card.v2 .tag { color: var(--magenta); }
+    .card ul { padding-left: 18px; color: var(--muted); font-size: 0.85rem; line-height: 1.6; }
+    .card .go { font-family: var(--display); font-size: 0.75rem; letter-spacing: 0.2em; color: var(--cyan); }
+    .footer { margin-top: 36px; color: var(--muted); font-size: 0.8rem; }
   </style>
 </head>
 <body>
-  <h1>AI Escape Room</h1>
-  <a href="/v1/">Play Version 1</a>
+  <canvas id="fx-bg" aria-hidden="true"></canvas>
+  <canvas id="fx-top" aria-hidden="true"></canvas>
+  <div class="crt" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <main class="select">
+    <h1 class="glitch" data-text="AI ESCAPE ROOM">AI ESCAPE ROOM</h1>
+    <p class="subtitle">SELECT BUILD</p>
+
+    <div class="cards">
+      <a class="panel card" href="/v1/">
+        <span class="tag">VERSION 1 &middot; LEGACY</span>
+        <h2>LLM-Only Game Master</h2>
+        <ul>
+          <li>Gemini holds the whole game in one prompt</li>
+          <li>Plain chat interface</li>
+          <li>Kept for comparison - see README for its flaws</li>
+        </ul>
+        <span class="go">ENTER &rarr;</span>
+      </a>
+      <a class="panel card v2" href="/v2/">
+        <span class="tag">VERSION 2 &middot; RECOMMENDED</span>
+        <h2>Engine + AI Narrator</h2>
+        <ul>
+          <li>Deterministic engine decides every outcome</li>
+          <li>Gemini parses language &amp; narrates, behind guardrails</li>
+          <li>Game UI: hotspots, keypad, timer, achievements, effects</li>
+        </ul>
+        <span class="go">ENTER &rarr;</span>
+      </a>
+    </div>
+
+    <p class="footer">Room 404: The Forgotten Lab &middot; Built with Node.js + Google Gemini</p>
+  </main>
+
+  <script type="module" src="/v2/fx.js"></script>
 </body>
 </html>
