@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ROOM 404 - AI Escape Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="fx-bg" aria-hidden="true"></canvas>
+  <canvas id="fx-top" aria-hidden="true"></canvas>
+  <div class="crt" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div id="flash" aria-hidden="true"></div>
+
+  <!-- Boot screen -->
+  <section id="boot" class="screen">
+    <div class="boot-box">
+      <pre id="boot-log"></pre>
+      <h1 class="glitch title-xl" data-text="ROOM 404">ROOM 404</h1>
+      <p class="subtitle">THE FORGOTTEN LAB</p>
+      <button id="start" class="btn btn-primary pulse" disabled>INITIALIZING...</button>
+      <p class="boot-tip">Headphones recommended &middot; <a href="/">version select</a></p>
+    </div>
+  </section>
+
+  <!-- Game -->
+  <div id="app" class="hidden">
+    <header class="hud">
+      <div class="brand">
+        <h1 class="glitch" data-text="ROOM 404">ROOM 404</h1>
+        <span class="brand-sub">THE FORGOTTEN LAB <em>v2</em></span>
+      </div>
+
+      <div class="hud-center">
+        <div class="timer" id="timer" title="Time left">15:00</div>
+        <div class="progress" title="Escape progress">
+          <div class="progress-bar" id="progress-bar"></div>
+          <span id="progress-label">0%</span>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="stat"><span>MOVES</span><b id="stat-moves">0</b></div>
+        <div class="stat"><span>HINTS</span><b id="stat-hints">0</b></div>
+        <div class="stat"><span>ERRORS</span><b id="stat-errors">0</b></div>
+        <div class="ai-badge" id="ai-badge" title="AI status">AI ...</div>
+        <button class="icon-btn" id="btn-mute" title="Toggle sound" aria-label="Toggle sound"></button>
+        <button class="icon-btn" id="btn-restart" title="Restart" aria-label="Restart"></button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel room-panel">
+        <h2 class="panel-title"><span class="dot"></span>ROOM SCAN</h2>
+        <div class="hotspots" id="hotspots"></div>
+        <p class="panel-tip">Click an object to interact. Select an inventory item first to use it on something.</p>
+      </section>
+
+      <section class="panel console-panel">
+        <h2 class="panel-title"><span class="dot dot-live"></span>ECHO TERMINAL</h2>
+        <div id="log" class="log" aria-live="polite"></div>
+        <div class="chips">
+          <button class="chip" data-cmd="look around">LOOK</button>
+          <button class="chip" data-cmd="inventory">INVENTORY</button>
+          <button class="chip chip-hint" id="btn-hint">HINT</button>
+          <button class="chip" data-cmd="help">HELP</button>
+          <label class="trace-toggle"><input type="checkbox" id="trace" checked /> AI trace</label>
+        </div>
+        <form id="cmd-form" class="cmd" autocomplete="off">
+          <span class="prompt">&gt;</span>
+          <input id="cmd" maxlength="300" placeholder="Type anything... e.g. 'shine the light on the books'" />
+          <button class="btn btn-send" type="submit">EXECUTE</button>
+        </form>
+      </section>
+
+      <aside class="panel side-panel">
+        <h2 class="panel-title"><span class="dot"></span>INVENTORY</h2>
+        <div class="inventory" id="inventory"></div>
+
+        <h2 class="panel-title"><span class="dot"></span>OBJECTIVES</h2>
+        <ol class="objectives" id="objectives"></ol>
+
+        <h2 class="panel-title"><span class="dot"></span>ACHIEVEMENTS</h2>
+        <ul class="achievements" id="achievements"></ul>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Context menu -->
+  <div id="ctx" class="ctx hidden" role="menu"></div>
+
+  <!-- Keypad modal -->
+  <div id="keypad" class="modal hidden" role="dialog" aria-label="Drawer keypad">
+    <div class="modal-box keypad-box">
+      <h3>DRAWER KEYPAD</h3>
+      <div class="keypad-display" id="keypad-display">____</div>
+      <div class="keypad-grid" id="keypad-grid"></div>
+      <button class="btn btn-ghost" data-close>CANCEL</button>
+    </div>
+  </div>
+
+  <!-- Password modal -->
+  <div id="password" class="modal hidden" role="dialog" aria-label="Terminal password">
+    <div class="modal-box">
+      <h3>ECHO SECURITY</h3>
+      <p class="terminal-text">ENTER PASSWORD_</p>
+      <form id="password-form">
+        <input id="password-input" maxlength="20" autocomplete="off" spellcheck="false" />
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close>CANCEL</button>
+          <button class="btn btn-primary" type="submit">SUBMIT</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- End modal -->
+  <div id="end" class="modal hidden" role="dialog">
+    <div class="modal-box end-box">
+      <h2 id="end-title" class="glitch" data-text="ESCAPED">ESCAPED</h2>
+      <p id="end-text"></p>
+      <div class="end-stats" id="end-stats"></div>
+      <button class="btn btn-primary" id="btn-again">PLAY AGAIN</button>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
