@@ -77,17 +77,17 @@ npm start
 #    http://localhost:3000
 ```
 
-From the start page choose **Version 1** or **Version 2**. In Version 2, pick **GENERATE NEW ROOM** (Gemini designs a fresh room) or **CLASSIC: ROOM 404**.
+From the start page choose **Version 1** or **Version 2**. In Version 2, pick **AI CAMPAIGN: 3 NEW ROOMS** or **CLASSIC CAMPAIGN**. A run is 3 levels. Each level is a new room, and each one is harder than the last.
 
-- Version 2 also runs **without** an API key. It uses the classic room and the built-in narrator, so you can try it immediately.
-- Version 1 and AI-generated rooms need a valid key.
+- Version 2 also runs **without** an API key. The classic campaign (the lab, the tomb, the space station) and the built-in narrator need no key.
+- Version 1 and AI-designed rooms need a valid key.
 
 Other scripts:
 
 ```bash
 npm run dev       # restart automatically when files change
-npm test          # run the automated test suite (38 tests, no API key needed)
-npm run playtest  # with the server running: generate a new AI room and play it to the end via the API
+npm test          # run the automated test suite (49 tests, no API key needed)
+npm run playtest  # with the server running: play a full 3-level AI campaign through the API
 ```
 
 Configuration (`.env`):
@@ -95,7 +95,8 @@ Configuration (`.env`):
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GEMINI_API_KEY` | For AI features | - | Your Google AI Studio API key |
-| `GEMINI_MODEL` | No | `gemini-3.5-flash` | Any Gemini text model your key can access |
+| `GEMINI_MODEL` | No | `gemini-3.5-flash-lite` | Model for parsing and narration. Flash-Lite has a much larger free-tier daily quota than Flash. |
+| `GEMINI_ROOM_MODEL` | No | same as `GEMINI_MODEL` | Optional stronger model used only to design rooms (one request per level, its own quota). |
 | `PORT` | No | `3000` | Local web server port |
 
 ---
@@ -138,12 +139,14 @@ Troubleshooting:
 
 ## 4. How to play
 
-- Choose **GENERATE NEW ROOM** for a room no one has played before (it takes about 10-60 seconds while Gemini designs it), or **CLASSIC: ROOM 404**.
+- Choose **AI CAMPAIGN** for three rooms nobody has played (each takes a few seconds to design), or **CLASSIC CAMPAIGN** for three hand-made rooms.
+- A **level card** shows the rules before the clock starts. The countdown begins with your first move.
 - **Click an object** in the *Room Scan* panel to examine, open or interact with it.
 - **Click an inventory item** to select it, then click an object and choose **"Use ... here"**.
 - **Or type anything** in the terminal, for example *"shine the light on the books"* or *"punch 0745 into the keypad"*.
-- Use **HINT** when stuck. Hints get more specific each time, but cost points.
-- Escape before the timer reaches zero. Your score depends on time, hints used and wrong attempts.
+- Use **HINT** when stuck. Hints get more specific each time. They cost 50 points on level 1, 75 on level 2 and 120 on level 3.
+- Escape before the timer reaches zero, then press **NEXT LEVEL**. From level 2, a wrong code or password also costs time (15 seconds, then 30).
+- Scores are multiplied by the level (x1, x1.5, x2) and added into one run total. Clearing all 3 levels unlocks the Mastermind achievement.
 - The **AI trace** line under each response shows who parsed your command (`local` or `gemini`), who narrated it (`gemini` or `engine`), and whether a guardrail stepped in.
 
 <details>
@@ -349,8 +352,26 @@ flowchart LR
 The per-turn parser and narrator prompts still never contain the code or password. The output guard
 builds its leak patterns from each room's own secrets.
 
-`npm run playtest` proves this end to end. It generates a fresh room, then plays it through the HTTP API using only
-what a player can see (object names and hints): wrong attempts, an injection attempt, the red herring, and the escape.
+### Campaign: 3 levels
+
+Every run is three rooms. The puzzle chain stays the same; the pressure does not.
+
+| | Level 1 · INITIATE | Level 2 · OPERATIVE | Level 3 · MASTERMIND |
+|---|---|---|---|
+| Time | 15 minutes | 12 minutes | 10 minutes |
+| Hint cost | 50 points | 75 points | 120 points |
+| Wrong code or password | no time lost | −15 seconds | −30 seconds |
+| Score multiplier | x1 | x1.5 | x2 |
+| Clues (AI rooms) | direct | the riddle does not name the clue | a real cryptic riddle, plus decoy numbers |
+| Classic room | Room 404: The Forgotten Lab | The Pharaoh's Tomb | Station Zero |
+
+The next AI room is designed in the background while you play, so **NEXT LEVEL** is usually instant.
+If a design fails validation or the API is down, that level falls back to its classic room.
+Running out of time offers **RETRY LEVEL** on the same room. Achievements carry across the run.
+
+`npm run playtest` proves a full campaign end to end. It generates three rooms, then plays each through the HTTP API using only
+what a player can see (object names and hints), including a wrong code and an injection attempt. A live run cleared all three
+(The Phantom Hold, a samurai dojo, a drifting med-bay) with a run score of 1807.
 
 ---
 
@@ -360,7 +381,7 @@ what a player can see (object names and hints): wrong attempts, an injection att
 npm test
 ```
 
-38 automated tests (Node's built-in test runner, no dependencies) cover the engine rules,
+49 automated tests (Node's built-in test runner, no dependencies) cover the engine rules, the 3-level campaign,
 the parser, every guardrail, room validation, and a full natural-language playthrough of a real
 Gemini-generated room (stored as a fixture in `tests/fixtures/`). The challenging scenarios, and how each version
 handles them, are documented in **[docs/TEST_CASES.md](docs/TEST_CASES.md)**.
@@ -388,8 +409,9 @@ AI-Escape-Room/
 │   │   └── game.js        # Version 1: single prompt + full history
 │   └── v2/
 │       ├── room-format.js # Puzzle roles, room validation (solvability + secrecy), public view
+│       ├── levels.js      # Campaign rules: time, hint cost, time penalty, score multiplier
 │       ├── rooms/
-│       │   └── classic.js # Hand-made "Room 404" (fallback room)
+│       │   └── classic.js # Hand-made rooms, one per level (lab, tomb, station)
 │       ├── generator.js   # Gemini room designer: random code/theme, JSON schema, retry
 │       ├── engine.js      # Deterministic, role-based game engine (single source of truth)
 │       ├── parser.js      # Rule-based natural-language parser
@@ -422,6 +444,7 @@ git log --oneline --decorate   # full history
 git checkout v1.0              # the original Version 1 code
 git checkout v2.0              # the improved Version 2 code
 git checkout v2.1              # Version 2 + AI-generated rooms
+git checkout v2.2              # 3-level campaign
 git checkout main              # back to latest
 ```
 
@@ -434,8 +457,10 @@ git checkout main              # back to latest
 | `GET` | `/api/health` | - | `{ ok, ai: { enabled, model } }` |
 | `POST` | `/api/v1/chat` | `{ sessionId, message }` | V1 turn: `{ reply, escaped, turns }` |
 | `POST` | `/api/v1/reset` | `{ sessionId }` | Clear V1 history |
-| `POST` | `/api/v2/new` | `{ mode: "ai" \| "classic" }` | Start a game: `{ sessionId, narration, notice, state, ai }`. `state.room` holds the public room view (names and icons only). |
-| `POST` | `/api/v2/action` | `{ sessionId, input }` | V2 turn: `{ narration, event, success, achievements, state, meta }` |
+| `POST` | `/api/v2/new` | `{ mode: "ai" \| "classic" }` | Start a 3-level run at level 1: `{ sessionId, narration, notice, state, campaign, ai }`. |
+| `POST` | `/api/v2/next` | `{ sessionId, classic? }` | After an escape, load the next level. `classic: true` skips AI generation. |
+| `POST` | `/api/v2/retry` | `{ sessionId }` | Restart the current level after a timeout, same room, fresh clock. |
+| `POST` | `/api/v2/action` | `{ sessionId, input }` | V2 turn: `{ narration, event, success, penaltyMs, achievements, state, campaign, meta }` |
 | `POST` | `/api/v2/hint` | `{ sessionId }` | Next hint for the current stage |
 
 `state` is a public view of the game (inventory, objectives, progress, timer, score) and **never contains solutions**.
@@ -460,7 +485,7 @@ git checkout main              # back to latest
 - **Generation latency.** Designing a room takes about 10-60 seconds depending on Gemini load. A pre-generated pool of validated rooms would make starts instant.
 - **In-memory sessions** are lost on restart and do not scale across several servers. Redis or a database would fix this.
 - **The free tier has rate limits.** Heavy use degrades to offline narration (by design, not a crash).
-- Ideas: difficulty levels, a leaderboard per generated room, sharing a room by seed, voice input, multiplayer co-op, and a Gemini image model for room art.
+- Ideas: more than 3 levels, a leaderboard per generated room, sharing a room by seed, voice input, multiplayer co-op, and a Gemini image model for room art.
 
 ---
 

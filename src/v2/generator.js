@@ -6,8 +6,9 @@
 // that the room is solvable and keeps its secrets before anyone plays it.
 
 import crypto from 'node:crypto';
-import { generate } from './gemini.js';
+import { generate, roomModel } from './gemini.js';
 import { OBJECT_ROLES, ITEM_ROLES, HINT_STAGES, ICONS, validateRoom } from './room-format.js';
+import { getLevel } from './levels.js';
 
 const THEMES = [
   'an abandoned lighthouse during a storm', "a pirate captain's cabin on a sinking ship", 'a pharaoh\'s sealed burial chamber',
@@ -112,38 +113,43 @@ Rules:
 - icon: choose the closest icon from the allowed list for each thing.
 - Family friendly. Output only the JSON.`;
 
-export async function generateRoom({ attempts = 2 } = {}) {
+export async function generateRoom({ attempts = 3, level = 1 } = {}) {
   const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
   const theme = pickTheme();
   const clueStyle = pick(CODE_CLUE_STYLES);
   const revealStyle = pick(REVEAL_STYLES);
+  const { design } = getLevel(level);
 
   let feedback = '';
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const prompt =
       `Design a new escape room.\nSetting: ${theme}\nCODE: ${code}\n` +
-      `Suggested code clue style: ${clueStyle}\nSuggested reveal mechanic: ${revealStyle}\n` +
+      `Suggested code clue style: ${clueStyle}\nSuggested reveal mechanic: ${revealStyle}\n${design}\n` +
       `Make the names, items and password specific to this setting.` +
       feedback;
 
-    const raw = await generate({
-      system: SYSTEM,
-      prompt,
-      schema: ROOM_SCHEMA,
-      temperature: 1.0,
-      maxOutputTokens: 8192,
-      thinking: 'low',
-      timeoutMs: 120000,
-      retries: 0,
-    });
-
     try {
-      return validateRoom({ ...raw, theme, aiGenerated: true, id: `ai-${Date.now()}` }, { code });
+      const raw = await generate({
+        system: SYSTEM,
+        prompt,
+        schema: ROOM_SCHEMA,
+        temperature: 1.0,
+        maxOutputTokens: 8192,
+        thinking: 'low',
+        timeoutMs: 90000,
+        retries: 1,
+        model: roomModel(),
+      });
+      return validateRoom({ ...raw, theme, aiGenerated: true, id: `ai-${level}-${Date.now()}` }, { code });
     } catch (err) {
       lastError = err;
-      feedback = `\n\nYour previous design was rejected for these reasons - fix all of them:\n- ${err.errors.join('\n- ')}`;
-      console.warn(`[generator] attempt ${attempt} rejected: ${err.errors.join('; ')}`);
+      if (err.errors) {
+        feedback = `\n\nYour previous design was rejected for these reasons - fix all of them:\n- ${err.errors.join('\n- ')}`;
+        console.warn(`[generator] level ${level} attempt ${attempt} rejected: ${err.errors.join('; ')}`);
+      } else {
+        console.warn(`[generator] level ${level} attempt ${attempt} failed: ${err.message.slice(0, 120)}`);
+      }
     }
   }
   throw lastError;

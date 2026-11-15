@@ -3,9 +3,9 @@ import crypto from 'node:crypto';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const sessions = new Map();
 
-export function createSession(state) {
+export function createSession(state, extra = {}) {
   const id = crypto.randomUUID();
-  sessions.set(id, { state, lastSeen: Date.now() });
+  sessions.set(id, { ...extra, state, lastSeen: Date.now() });
   return id;
 }
 

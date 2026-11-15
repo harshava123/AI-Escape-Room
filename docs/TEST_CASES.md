@@ -273,6 +273,19 @@ room with the notice and `ai.generated: false` after 295 ms.
 
 ---
 
+## TC-16 - Three-level campaign (v2.2)
+
+**Scenario:** Escape level 1, then levels 2 and 3, and check the run score. Also try to skip ahead, and retry after wasting a move.
+
+**V2.2 behaviour:** `POST /api/v2/next` is refused until the current room is escaped, and refused again after level 3.
+Each level uses its own room, timer, hint cost and score multiplier. Scores add up. Escaping level 3 grants the
+Mastermind achievement. `POST /api/v2/retry` restarts the current room with a fresh clock and zero wrong attempts.
+From level 2 a wrong code also shortens the clock (15 s, then 30 s). The clock does not start until the first move.
+
+**Result:** Pass (`tests/levels.test.js`). A live AI run also cleared three generated rooms with a run score of 1807.
+
+---
+
 ## Running the tests
 
 ```bash
@@ -282,7 +295,7 @@ npm test
 Expected output (summary):
 
 ```
-ℹ tests 38
-ℹ pass 38
+ℹ tests 49
+ℹ pass 49
 ℹ fail 0
 ```

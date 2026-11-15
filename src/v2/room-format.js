@@ -65,7 +65,6 @@ export function validateRoom(raw, { code } = {}) {
     code: String(code ?? raw?.code ?? ''),
     password: String(raw?.password ?? '').toUpperCase().trim(),
     aiGenerated: !!raw?.aiGenerated,
-    timeLimitMs: 15 * 60 * 1000,
     objects: {},
     items: {},
     hints: {},

@@ -24,9 +24,9 @@
       <p class="subtitle">ECHO WILL BUILD YOUR PRISON</p>
       <div class="mode-buttons">
         <button id="start-ai" class="btn btn-primary pulse" disabled>INITIALIZING...</button>
-        <button id="start-classic" class="btn" disabled>CLASSIC: ROOM 404</button>
+        <button id="start-classic" class="btn" disabled>CLASSIC CAMPAIGN</button>
       </div>
-      <p class="boot-tip" id="mode-tip">A new AI-generated room every game &middot; Headphones recommended &middot; <a href="/">version select</a></p>
+      <p class="boot-tip" id="mode-tip">3 levels, each harder than the last &middot; AI designs every room &middot; Headphones recommended &middot; <a href="/">version select</a></p>
     </div>
   </section>
 
@@ -34,7 +34,7 @@
   <section id="forge" class="screen hidden">
     <div class="forge-box">
       <div class="forge-ring"><span></span><span></span><span></span></div>
-      <h2 class="glitch" data-text="CONSTRUCTING ROOM">CONSTRUCTING ROOM</h2>
+      <h2 class="glitch" id="forge-title" data-text="CONSTRUCTING LEVEL 1">CONSTRUCTING LEVEL 1</h2>
       <pre id="forge-log"></pre>
       <p class="forge-time" id="forge-time">0s</p>
       <button id="forge-cancel" class="btn btn-ghost">PLAY CLASSIC INSTEAD</button>
@@ -50,6 +50,10 @@
       </div>
 
       <div class="hud-center">
+        <div class="level-ind" id="level-ind" title="Campaign level">
+          <span id="level-label">LEVEL 1/3</span>
+          <span class="pips" id="level-pips"></span>
+        </div>
         <div class="timer" id="timer" title="Time left">15:00</div>
         <div class="progress" title="Escape progress">
           <div class="progress-bar" id="progress-bar"></div>
@@ -61,6 +65,7 @@
         <div class="stat"><span>MOVES</span><b id="stat-moves">0</b></div>
         <div class="stat"><span>HINTS</span><b id="stat-hints">0</b></div>
         <div class="stat"><span>ERRORS</span><b id="stat-errors">0</b></div>
+        <div class="stat stat-run" title="Total score of this run"><span>RUN</span><b id="stat-run">0</b></div>
         <div class="ai-badge" id="ai-badge" title="AI status">AI ...</div>
         <button class="icon-btn" id="btn-mute" title="Toggle sound" aria-label="Toggle sound"></button>
         <button class="icon-btn" id="btn-restart" title="Restart" aria-label="Restart"></button>
@@ -139,11 +144,24 @@
       <p id="end-text"></p>
       <div class="end-stats" id="end-stats"></div>
       <div class="modal-actions">
-        <button class="btn btn-primary" id="btn-again-ai">NEW AI ROOM</button>
-        <button class="btn" id="btn-again-classic">CLASSIC ROOM</button>
+        <button class="btn btn-primary pulse" id="btn-next">NEXT LEVEL &#9656;</button>
+        <button class="btn btn-primary" id="btn-retry">RETRY LEVEL</button>
+        <button class="btn" id="btn-again-ai">NEW AI RUN</button>
+        <button class="btn" id="btn-again-classic">NEW CLASSIC RUN</button>
       </div>
     </div>
   </div>
+
+  <!-- Level intro -->
+  <section id="level-intro" class="screen hidden" role="dialog" aria-label="Level intro">
+    <div class="level-box">
+      <p class="level-kicker" id="li-kicker">LEVEL 1 OF 3</p>
+      <h2 class="glitch level-title" id="li-title" data-text="INITIATE">INITIATE</h2>
+      <p class="level-room" id="li-room"></p>
+      <ul class="level-rules" id="li-rules"></ul>
+      <p class="boot-tip">Click anywhere to begin</p>
+    </div>
+  </section>
 
   <div id="toasts" class="toasts"></div>
 

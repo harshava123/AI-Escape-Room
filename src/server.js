@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chatV1, resetV1 } from './v1/game.js';
-import { startGame, playTurn, takeHint, GameError } from './v2/game.js';
+import { startGame, nextLevel, retryLevel, playTurn, takeHint, GameError } from './v2/game.js';
 import { geminiConfigured, geminiModel } from './v2/gemini.js';
 import { rateLimited } from './v2/sessions.js';
 
@@ -70,6 +70,8 @@ const routes = {
 
   // Version 2
   'POST /api/v2/new': async (body) => startGame({ mode: body.mode === 'ai' ? 'ai' : 'classic' }),
+  'POST /api/v2/next': async (body) => nextLevel(body.sessionId, { classic: body.classic === true }),
+  'POST /api/v2/retry': async (body) => retryLevel(body.sessionId),
   'POST /api/v2/action': async (body) => playTurn(body.sessionId, body.input),
   'POST /api/v2/hint': async (body) => takeHint(body.sessionId),
 };
@@ -87,7 +89,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/v2') && rateLimited(ip)) {
     return sendJson(res, 429, { error: 'Too many requests - slow down a little.' });
   }
-  if (pathname === '/api/v2/new' && rateLimited(`new:${ip}`, 8)) {
+  if (['/api/v2/new', '/api/v2/next', '/api/v2/retry'].includes(pathname) && rateLimited(`new:${ip}`, 12)) {
     return sendJson(res, 429, { error: 'Too many new games in a minute - give ECHO a moment.' });
   }
 

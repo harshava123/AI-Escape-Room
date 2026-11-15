@@ -11,6 +11,7 @@ const cases = [
   ['Examine the CLOCK!', { intent: 'examine', target: 'codeClue' }],
   ['punch 0745 into the keypad', { intent: 'enter', code: '0745', target: 'lockbox' }],
   ['shine the uv light at the shelves', { intent: 'use', item: 'tool', target: 'revealSurface' }],
+  ["I carefully point the UV flashlight at the bookshelf to see what's hidden", { intent: 'use', item: 'tool', target: 'revealSurface' }],
   ['type neuron into the computer', { intent: 'enter', code: 'neuron', target: 'passwordLock' }],
   ['unlock the door with the keycard', { intent: 'use', item: 'exitKey', target: 'exit' }],
   ['swipe card on reader', { intent: 'use', item: 'exitKey', target: 'exit' }],

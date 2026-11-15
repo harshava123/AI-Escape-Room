@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.2.0] - 3-level campaign
+
+### Added
+- A run is now **3 levels**. Each level is a new room with stricter rules (`src/v2/levels.js`): less time (15, 12, then 10 minutes), higher hint costs (50, 75, 120), a time penalty for wrong codes from level 2 (15 s, then 30 s), and a score multiplier (x1, x1.5, x2).
+- Two new hand-made rooms for the classic campaign: **The Pharaoh's Tomb** and **Station Zero**, beside Room 404.
+- AI rooms get a difficulty brief per level, so later riddles are genuinely cryptic.
+- The next AI room is generated in the background during the current level.
+- UI: level pips, a run-score counter, a level-intro card, and end screens for level cleared, campaign complete and timeout (next level, retry, or a new run).
+- The countdown starts with the first move, not while the intro is on screen.
+- Achievements carry across the run. New ones: Flawless and Mastermind.
+- 11 new tests (49 total), including a full classic campaign played through the API.
+
+### Changed
+- Default model is `gemini-3.5-flash-lite`, which has a much larger free-tier daily quota. `GEMINI_ROOM_MODEL` can point room design at a different model.
+- Room generation retries up to 3 times and retries transient API errors, then falls back to that level's classic room.
+
 ## [2.1.0] - AI-generated rooms
 
 ### Added

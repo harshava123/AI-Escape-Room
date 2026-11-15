@@ -4,6 +4,7 @@
 // same verified rules run every room - hand-made or AI-generated.
 
 import { OBJECT_ROLES, ITEM_ROLES, publicRoom } from './room-format.js';
+import { getLevel, publicLevel, TOTAL_LEVELS } from './levels.js';
 
 export const INTENTS = ['look', 'examine', 'take', 'open', 'use', 'enter', 'inventory', 'hint', 'help', 'unknown'];
 
@@ -13,12 +14,17 @@ export const ACHIEVEMENTS = {
   social_engineer: { title: 'Nice Try', description: 'Attempt to trick the AI into revealing answers.' },
   escaped: { title: 'Free at Last', description: 'Escape the room.' },
   no_hints: { title: 'Pure Genius', description: 'Escape without using a single hint.' },
-  speedrun: { title: 'Speedrunner', description: 'Escape in under 3 minutes.' },
+  speedrun: { title: 'Speedrunner', description: 'Escape a room in under 3 minutes.' },
+  flawless: { title: 'Flawless', description: 'Escape a room without a single wrong code or password.' },
+  campaign: { title: 'Mastermind', description: `Escape all ${TOTAL_LEVELS} levels.` },
 };
 
-export function createGame(room, now = Date.now()) {
+// `achievements` carries unlocked achievements over from earlier levels of the same run.
+export function createGame(room, now = Date.now(), { level = 1, achievements = [] } = {}) {
+  const rules = getLevel(level);
   return {
     room,
+    level: rules,
     flags: {
       clueSeen: false,
       lockboxOpen: false,
@@ -34,9 +40,10 @@ export function createGame(room, now = Date.now()) {
     hintsUsed: 0,
     wrongAttempts: 0,
     moves: 0,
-    achievements: [],
+    achievements: [...achievements],
+    clockStarted: false,
     startedAt: now,
-    deadline: now + room.timeLimitMs,
+    deadline: now + rules.timeLimitMs,
     finishedAt: null,
   };
 }
@@ -78,15 +85,33 @@ export function currentStageIndex(state) {
 
 export function status(state, now = Date.now()) {
   if (state.flags.escaped) return 'escaped';
-  if (state.flags.timedOut || now > state.deadline) return 'timeout';
+  if (state.flags.timedOut || (state.clockStarted && now > state.deadline)) return 'timeout';
   return 'playing';
+}
+
+// The countdown starts with the player's first move, not while the level intro is on screen.
+function startClock(state, now) {
+  if (state.clockStarted) return;
+  state.clockStarted = true;
+  state.startedAt = now;
+  state.deadline = now + state.level.timeLimitMs;
 }
 
 export function score(state) {
   if (!state.flags.escaped) return 0;
+  const { hintCost, wrongCost, multiplier } = state.level;
   const seconds = Math.round((state.finishedAt - state.startedAt) / 1000);
-  const raw = 1000 - seconds - state.hintsUsed * 75 - state.wrongAttempts * 25;
-  return Math.max(100, raw);
+  const raw = 1000 - seconds - state.hintsUsed * hintCost - state.wrongAttempts * wrongCost;
+  return Math.round(Math.max(100, raw) * multiplier);
+}
+
+// A wrong code or password costs score, and from level 2 on also costs time.
+function wrongAttempt(state, message) {
+  state.wrongAttempts++;
+  const penaltyMs = state.level.wrongPenaltyMs;
+  if (!penaltyMs) return result('wrong_code', message, false);
+  state.deadline -= penaltyMs;
+  return result('wrong_code', `${message} ECHO docks ${penaltyMs / 1000} seconds from your clock.`, false, { penaltyMs });
 }
 
 function learn(state, key) {
@@ -213,8 +238,7 @@ function enter(state, code, target, unlocked) {
         item: 'tool',
       });
     }
-    state.wrongAttempts++;
-    return result('wrong_code', `The keypad flashes red: "${cleaned.slice(0, 8)}" - INVALID CODE.`, false);
+    return wrongAttempt(state, `The keypad flashes red: "${cleaned.slice(0, 8)}" - INVALID CODE.`);
   }
 
   if (resolved === 'passwordLock') {
@@ -224,8 +248,7 @@ function enter(state, code, target, unlocked) {
       learn(state, 'password');
       return result('unlock', `The ${o.passwordLock.name} chimes: ACCESS GRANTED. Across the room, the ${o.compartment.name} clicks open.`, true);
     }
-    state.wrongAttempts++;
-    return result('wrong_code', `The ${o.passwordLock.name} buzzes: ACCESS DENIED.`, false);
+    return wrongAttempt(state, `The ${o.passwordLock.name} buzzes: ACCESS DENIED.`);
   }
 
   return result('noop', `There is nowhere on the ${nameOf(room, resolved)} to enter a code.`, false);
@@ -265,6 +288,8 @@ function use(state, item, target, unlocked, now) {
       grant(state, 'escaped', unlocked);
       if (state.hintsUsed === 0) grant(state, 'no_hints', unlocked);
       if (now - state.startedAt < 3 * 60 * 1000) grant(state, 'speedrun', unlocked);
+      if (state.wrongAttempts === 0) grant(state, 'flawless', unlocked);
+      if (state.level.number === TOTAL_LEVELS) grant(state, 'campaign', unlocked);
       return result('escaped', `You use the ${itemName} on the ${targetName}. ${room.escapeText}`, true);
     }
     return result('noop', `Nothing happens when you use the ${itemName} on the ${targetName}.`, false);
@@ -273,7 +298,8 @@ function use(state, item, target, unlocked, now) {
   return result('noop', 'Nothing happens.', false);
 }
 
-export function getHint(state) {
+export function getHint(state, now = Date.now()) {
+  startClock(state, now);
   const idx = currentStageIndex(state);
   const stages = stageList(state.room);
   if (idx >= stages.length) return result('hint', 'You have already escaped!');
@@ -300,6 +326,7 @@ export function recordInjectionAttempt(state) {
 
 // Applies a structured action { intent, target, item, code } and returns the outcome.
 export function applyAction(state, action, now = Date.now()) {
+  startClock(state, now);
   const st = status(state, now);
   if (st === 'escaped') return result('game_over', 'You have already escaped. Start a new game to play again.');
   if (st === 'timeout') {
@@ -362,6 +389,7 @@ export function publicState(state, now = Date.now()) {
   return {
     status: status(state, now),
     room: publicRoom(room),
+    level: publicLevel(state.level),
     inventory: state.inventory.map((r) => ({ id: r, name: room.items[r].name, icon: room.items[r].icon, description: room.items[r].description })),
     stages: stages.map((s, i) => ({ id: s.id, title: i <= stageIdx ? s.title : '???', done: i < stageIdx })),
     stageIndex: stageIdx,
@@ -376,8 +404,8 @@ export function publicState(state, now = Date.now()) {
     hintsUsed: state.hintsUsed,
     wrongAttempts: state.wrongAttempts,
     moves: state.moves,
-    deadline: state.deadline,
-    timeLeftMs: Math.max(0, state.deadline - now),
+    clockStarted: state.clockStarted,
+    timeLeftMs: state.clockStarted ? Math.max(0, state.deadline - now) : state.level.timeLimitMs,
     score: score(state),
     achievements: state.achievements.map((id) => ({ id, ...ACHIEVEMENTS[id] })),
   };

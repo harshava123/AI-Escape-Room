@@ -11,7 +11,12 @@ export class GeminiError extends Error {
 }
 
 export function geminiModel() {
-  return process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  return process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+}
+
+// Room design is one big request per level, so it may use a stronger model with its own quota.
+export function roomModel() {
+  return process.env.GEMINI_ROOM_MODEL || geminiModel();
 }
 
 export function geminiConfigured() {
@@ -42,10 +47,10 @@ export async function generate({
   thinking = 'off',
   timeoutMs = 10000,
   retries = 1,
+  model = geminiModel(),
 }) {
   if (!geminiConfigured()) throw new GeminiError('GEMINI_API_KEY is not configured', 0);
 
-  const model = geminiModel();
   const generationConfig = { temperature, maxOutputTokens };
   if (schema) {
     generationConfig.responseMimeType = 'application/json';

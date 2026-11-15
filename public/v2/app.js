@@ -39,6 +39,7 @@ const ui = {
   ended: false,
   mode: 'ai',
   aiEnabled: false,
+  campaign: null,
   history: [],
   historyIdx: -1,
 };
@@ -128,6 +129,8 @@ function renderState() {
   bumpStat('#stat-moves', g.moves);
   bumpStat('#stat-hints', g.hintsUsed);
   bumpStat('#stat-errors', g.wrongAttempts);
+  bumpStat('#stat-run', ui.campaign?.totalScore ?? 0);
+  renderLevel();
 
   for (const el of document.querySelectorAll('.hotspot')) {
     const s = g.objects[el.dataset.id];
@@ -164,6 +167,22 @@ function renderState() {
     ? g.achievements.map((a) => `<li>${a.title}<small>${a.description}</small></li>`).join('')
     : '<li class="empty">None yet...</li>';
 }
+
+function renderLevel() {
+  const { level } = ui.game;
+  const scores = ui.campaign?.scores || [];
+  $('#level-label').textContent = `LVL ${level.number}/${level.total} ${level.title}`;
+  $('#level-pips').innerHTML = Array.from({ length: level.total }, (_, i) => {
+    const cls = scores[i] !== undefined && scores[i] !== null ? 'done' : i === level.number - 1 ? 'current' : '';
+    return `<i class="pip ${cls}"></i>`;
+  }).join('');
+  $('#btn-hint').textContent = `HINT -${level.hintCost}`;
+}
+
+const fmtTime = (ms) => {
+  const s = Math.round(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
 
 function bumpStat(sel, value) {
   const el = $(sel);
@@ -258,7 +277,15 @@ async function requestHint() {
 async function handleResult(r) {
   const prevInventory = new Set((ui.game?.inventory || []).map((i) => i.id));
   ui.game = r.state;
+  ui.campaign = r.campaign;
   syncTimer();
+
+  if (r.penaltyMs) {
+    const timer = $('#timer');
+    restartAnim(timer, 'penalty');
+    const rect = timer.getBoundingClientRect();
+    floatText(`-${r.penaltyMs / 1000}s`, rect.right, rect.top + 6);
+  }
 
   let cls = 'ai';
   if (r.event === 'hint') cls += ' hint';
@@ -416,24 +443,46 @@ function showEnd(won) {
   if (ui.ended) return;
   ui.ended = true;
   const g = ui.game;
+  const c = ui.campaign;
+  const { level } = g;
+  const final = won && level.number === level.total;
+  const title = !won ? 'TERMINATED' : final ? 'FREEDOM' : `LEVEL ${level.number} CLEARED`;
+
   const box = $('.end-box');
   box.classList.toggle('lost', !won);
-  $('#end-title').textContent = won ? 'ESCAPED' : 'TERMINATED';
-  $('#end-title').dataset.text = won ? 'ESCAPED' : 'TERMINATED';
-  $('#end-text').textContent = won
-    ? `You escaped ${room().name}. ECHO is already designing a harder prison...`
-    : `Time ran out. ECHO seals ${room().name} forever... or until you try again.`;
-  const used = Math.round((15 * 60 * 1000 - g.timeLeftMs) / 1000);
+  $('#end-title').textContent = title;
+  $('#end-title').dataset.text = title;
+  $('#end-title').classList.toggle('long', title.length > 10);
+  $('#end-text').textContent = !won
+    ? `Time ran out on level ${level.number}. ECHO seals ${room().name}... unless you try again.`
+    : final
+      ? `You broke out of all ${level.total} levels. ECHO has nothing left to lock you in.`
+      : `You escaped ${room().name}. ECHO is already building level ${level.number + 1} - it will be harder.`;
+
+  const levelScores = final
+    ? `<div class="end-levels">${c.scores.map((s, i) => `<div><span>LEVEL ${i + 1}</span><b>${s}</b></div>`).join('')}</div>`
+    : '';
   $('#end-stats').innerHTML = `
-    ${won ? `<div class="score"><span>SCORE</span><b>${g.score}</b></div>` : ''}
-    <div><span>TIME</span><b>${Math.floor(used / 60)}:${String(used % 60).padStart(2, '0')}</b></div>
+    ${won ? `<div class="score"><span>${final ? 'FINAL RUN SCORE' : `LEVEL SCORE (x${level.multiplier})`}</span><b>${final ? c.totalScore : g.score}</b></div>` : ''}
+    ${levelScores}
+    ${won && !final ? `<div><span>RUN TOTAL</span><b>${c.totalScore}</b></div>` : ''}
+    <div><span>TIME USED</span><b>${fmtTime(level.timeLimitMs - g.timeLeftMs)}</b></div>
     <div><span>MOVES</span><b>${g.moves}</b></div>
     <div><span>HINTS</span><b>${g.hintsUsed}</b></div>
     <div><span>ERRORS</span><b>${g.wrongAttempts}</b></div>`;
+
+  $('#btn-next').classList.toggle('hidden', !won || final);
+  $('#btn-retry').classList.toggle('hidden', won);
+  $('#btn-again-ai').classList.toggle('hidden', (won && !final) || !ui.aiEnabled);
+  $('#btn-again-classic').classList.toggle('hidden', won && !final);
+
   if (!won) {
     sfx.defeat();
     flash('bad');
     setMood('#ff3355');
+  } else if (final) {
+    setTimeout(confetti, 900);
+    setTimeout(sfx.victory, 1000);
   }
   $('#end').classList.remove('hidden');
 }
@@ -446,6 +495,7 @@ function syncTimer() {
 
 function tickTimer() {
   if (!ui.game || ui.ended) return;
+  if (!ui.game.clockStarted) syncTimer();
   const left = Math.max(0, ui.deadline - Date.now());
   const sec = Math.ceil(left / 1000);
   const el = $('#timer');
@@ -473,14 +523,17 @@ const FORGE_STEPS = [
   'Checking for leaked secrets',
 ];
 
-// Shows the "constructing room" screen while Gemini designs a room; resolves with the game or null if cancelled.
-async function forgeRoom() {
+// Shows the "constructing room" screen while Gemini designs a room; resolves with the response or null if cancelled.
+async function forgeRoom(request, levelNumber) {
   const forge = $('#forge');
   const log = $('#forge-log');
   const controller = new AbortController();
   const started = Date.now();
   let step = 0;
   log.textContent = '';
+  $('#forge-title').textContent = `CONSTRUCTING LEVEL ${levelNumber}`;
+  $('#forge-title').dataset.text = `CONSTRUCTING LEVEL ${levelNumber}`;
+  $('#forge-time').textContent = '0s';
   forge.classList.remove('hidden');
 
   const addStep = () => {
@@ -496,7 +549,7 @@ async function forgeRoom() {
   $('#forge-cancel').addEventListener('click', onCancel, { once: true });
 
   try {
-    return await api('new', { mode: 'ai' }, controller.signal);
+    return await request(controller.signal);
   } catch (err) {
     if (err.name === 'AbortError') return null;
     throw err;
@@ -521,39 +574,102 @@ function renderRoomHeader(r) {
   badge.className = 'ai-badge ' + (r.ai.enabled ? 'on' : 'off');
 }
 
-async function newGame(mode = ui.mode) {
-  ui.mode = mode;
+function resetForLevel() {
   ui.ended = false;
   ui.selectedItem = null;
   $('#end').classList.add('hidden');
   setMood('#00f0ff');
   sfx.restoreAmbient();
+}
 
+// Full-screen "LEVEL N" card with the level's rules. Resolves on click or after a few seconds.
+function showLevelIntro(r) {
+  const { level } = r.state;
+  const el = $('#level-intro');
+  $('#li-kicker').textContent = `LEVEL ${level.number} OF ${level.total}`;
+  $('#li-title').textContent = level.title;
+  $('#li-title').dataset.text = level.title;
+  $('#li-room').textContent = r.state.room.name + (r.state.room.aiGenerated ? '  ·  designed by Gemini' : '');
+  const rules = [
+    ['TIME', fmtTime(level.timeLimitMs), level.number > 1],
+    ['HINT COST', `-${level.hintCost} pts`, level.number > 2],
+    ['WRONG ANSWER', level.wrongPenaltyMs ? `-${level.wrongPenaltyMs / 1000}s` : 'no time loss', level.wrongPenaltyMs > 0],
+    ['SCORE', `x${level.multiplier}`, false],
+  ];
+  $('#li-rules').innerHTML = rules.map(([k, v, hard]) => `<li class="${hard ? 'hard' : ''}">${k}<b>${esc(v)}</b></li>`).join('');
+
+  el.classList.remove('hidden');
+  sfx.boot();
+  setTimeout(sfx.unlock, 350);
+  burst(window.innerWidth / 2, window.innerHeight / 2, { colors: ['#ff2bd6', '#00f0ff', '#ffffff'], count: 90 });
+
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      el.removeEventListener('click', done);
+      el.classList.add('hidden');
+      resolve();
+    };
+    const timer = setTimeout(done, 4500);
+    el.addEventListener('click', done);
+  });
+}
+
+async function enterLevel(r) {
+  ui.game = null;
+  $('#log').innerHTML = '';
+  ui.sessionId = r.sessionId;
+  ui.game = r.state;
+  ui.campaign = r.campaign;
+  renderRoomHeader(r);
+  renderHotspots();
+  renderState();
+  syncTimer();
+
+  await showLevelIntro(r);
+  if (r.state.room.aiGenerated) {
+    sfx.success();
+    addEntry('system', `--- NEW ROOM GENERATED BY GEMINI IN ${(r.ai.generationMs / 1000).toFixed(1)}s - NO ONE HAS PLAYED IT BEFORE ---`);
+  }
+  if (r.notice) addEntry('system', r.notice);
+  addEntry('system', `--- LEVEL ${r.state.level.number}/${r.state.level.total} ${r.state.level.title} · ${fmtTime(r.state.timeLeftMs)} ON THE CLOCK - IT STARTS WITH YOUR FIRST MOVE ---`);
+  await typeOut(addEntry('ai'), r.narration);
+  if (!r.ai.enabled) addEntry('system', 'No GEMINI_API_KEY found - running with the built-in narrator. Add a key to .env for AI rooms and narration.');
+  $('#cmd').focus();
+}
+
+async function newGame(mode = ui.mode) {
+  ui.mode = mode;
+  resetForLevel();
   try {
-    let r = mode === 'ai' && ui.aiEnabled ? await forgeRoom() : null;
+    let r = mode === 'ai' && ui.aiEnabled ? await forgeRoom((signal) => api('new', { mode: 'ai' }, signal), 1) : null;
     if (!r) r = await api('new', { mode: 'classic' });
-
-    ui.game = null;
-    $('#log').innerHTML = '';
-    ui.sessionId = r.sessionId;
-    ui.game = r.state;
-    syncTimer();
-    renderRoomHeader(r);
-    renderHotspots();
-    renderState();
-
-    if (r.state.room.aiGenerated) {
-      sfx.success();
-      addEntry('system', `--- NEW ROOM GENERATED BY GEMINI IN ${(r.ai.generationMs / 1000).toFixed(1)}s - NO ONE HAS PLAYED IT BEFORE ---`);
-    }
-    if (r.notice) addEntry('system', r.notice);
-    addEntry('system', '--- LOCKDOWN INITIATED: 15:00 ON THE CLOCK ---');
-    await typeOut(addEntry('ai'), r.narration);
-    if (!r.ai.enabled) addEntry('system', 'No GEMINI_API_KEY found - running with the built-in narrator. Add a key to .env for AI rooms and narration.');
+    await enterLevel(r);
   } catch (err) {
     addEntry('system', `Could not reach the server: ${err.message}`);
   }
-  $('#cmd').focus();
+}
+
+async function nextLevel() {
+  const sessionId = ui.sessionId;
+  const next = ui.game.level.number + 1;
+  resetForLevel();
+  try {
+    let r = ui.campaign.mode === 'ai' && ui.aiEnabled ? await forgeRoom((signal) => api('next', { sessionId }, signal), next) : null;
+    if (!r) r = await api('next', { sessionId, classic: true });
+    await enterLevel(r);
+  } catch (err) {
+    addEntry('system', `Could not load the next level: ${err.message}`);
+  }
+}
+
+async function retryLevel() {
+  resetForLevel();
+  try {
+    await enterLevel(await api('retry', { sessionId: ui.sessionId }));
+  } catch (err) {
+    addEntry('system', `Could not restart the level: ${err.message}`);
+  }
 }
 
 async function boot() {
@@ -583,7 +699,7 @@ async function boot() {
   }
   const startAi = $('#start-ai');
   startAi.disabled = !ai;
-  startAi.textContent = ai ? 'GENERATE NEW ROOM' : 'AI ROOMS NEED A KEY';
+  startAi.textContent = ai ? 'AI CAMPAIGN: 3 NEW ROOMS' : 'AI ROOMS NEED A KEY';
   $('#start-classic').disabled = false;
   if (!ai) {
     startAi.classList.remove('pulse');
@@ -648,6 +764,8 @@ function bindEvents() {
     sfx.boot();
     newGame();
   });
+  $('#btn-next').addEventListener('click', nextLevel);
+  $('#btn-retry').addEventListener('click', retryLevel);
   $('#btn-again-ai').addEventListener('click', () => newGame('ai'));
   $('#btn-again-classic').addEventListener('click', () => newGame('classic'));
 

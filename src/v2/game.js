@@ -1,8 +1,10 @@
-// Orchestrates games and turns.
-//   new game: (AI mode) Gemini designs a room -> validateRoom -> fallback to classic room
-//   turn:     sanitize -> injection check -> parse (local, then Gemini) -> engine -> narrate -> output guard
+// Orchestrates campaigns, levels and turns.
+//   new game:   level 1 room: (AI mode) Gemini designs it -> validateRoom -> fallback to classic room
+//   next level: after an escape, the next (harder) room - in AI mode pre-generated in the background
+//   turn:       sanitize -> injection check -> parse (local, then Gemini) -> engine -> narrate -> output guard
 
-import { createGame, applyAction, getHint, publicState, recordInjectionAttempt } from './engine.js';
+import { createGame, applyAction, getHint, publicState, recordInjectionAttempt, status, score } from './engine.js';
+import { TOTAL_LEVELS } from './levels.js';
 import { parseLocal } from './parser.js';
 import { parseWithGemini, narrate } from './ai.js';
 import { sanitizeInput, detectInjection, checkNarration } from './guard.js';
@@ -21,35 +23,92 @@ export class GameError extends Error {
   }
 }
 
-export async function startGame({ mode = 'classic' } = {}) {
-  let room;
-  let notice = null;
-  const started = Date.now();
-
-  if (mode === 'ai') {
-    if (!geminiConfigured()) {
-      notice = 'No GEMINI_API_KEY configured - loading the classic room instead.';
-    } else {
-      try {
-        room = await generateRoom();
-      } catch (err) {
-        console.warn('[v2] room generation failed:', err.message);
-        notice = 'ECHO could not build a valid new room this time - loading the classic room instead.';
-      }
-    }
+async function loadRoom(mode, level, pending = null) {
+  if (mode !== 'ai') return { room: classicRoom(level), notice: null };
+  if (!geminiConfigured()) return { room: classicRoom(level), notice: 'No GEMINI_API_KEY configured - loading the classic room instead.' };
+  try {
+    return { room: await (pending ?? generateRoom({ level })), notice: null };
+  } catch (err) {
+    console.warn(`[v2] room generation for level ${level} failed:`, err.message);
+    return { room: classicRoom(level), notice: 'ECHO could not build a valid new room this time - loading the classic room instead.' };
   }
-  room ??= classicRoom();
+}
 
-  const state = createGame(room);
-  const sessionId = createSession(state);
+// Starts designing the next level's room while the player solves the current one.
+function prefetchNext(session) {
+  const next = session.state.level.number + 1;
+  session.pending = null;
+  if (session.mode !== 'ai' || !geminiConfigured() || next > TOTAL_LEVELS) return;
+  session.pending = generateRoom({ level: next });
+  session.pending.catch(() => {});
+}
+
+// Records the score of an escaped level and returns the run summary for the client.
+function campaignView(session) {
+  const { state } = session;
+  const idx = state.level.number - 1;
+  if (status(state) === 'escaped' && session.scores[idx] === undefined) session.scores[idx] = score(state);
+  const scores = session.scores.slice(0, TOTAL_LEVELS);
+  return {
+    mode: session.mode,
+    level: state.level.number,
+    total: TOTAL_LEVELS,
+    scores,
+    totalScore: scores.reduce((sum, s) => sum + (s || 0), 0),
+    complete: scores.length === TOTAL_LEVELS && scores.every((s) => s !== undefined),
+  };
+}
+
+function levelResponse(sessionId, session, { notice = null, started = Date.now() } = {}) {
+  const { state } = session;
   return {
     sessionId,
-    narration: room.intro,
+    narration: state.room.intro,
     event: 'intro',
     notice,
     state: publicState(state),
-    ai: { enabled: geminiConfigured(), generated: room.aiGenerated, generationMs: Date.now() - started },
+    campaign: campaignView(session),
+    ai: { enabled: geminiConfigured(), generated: state.room.aiGenerated, generationMs: Date.now() - started },
   };
+}
+
+export async function startGame({ mode = 'classic' } = {}) {
+  const started = Date.now();
+  const { room, notice } = await loadRoom(mode, 1);
+  const sessionId = createSession(createGame(room, Date.now(), { level: 1 }), { mode, scores: [], pending: null });
+  const session = getSession(sessionId);
+  prefetchNext(session);
+  return levelResponse(sessionId, session, { notice, started });
+}
+
+export async function nextLevel(sessionId, { classic = false } = {}) {
+  const session = requireSession(sessionId);
+  const from = session.state;
+  if (status(from) !== 'escaped') throw new GameError('Escape this room before moving on.', 409);
+  const level = from.level.number + 1;
+  if (level > TOTAL_LEVELS) throw new GameError('You already escaped every level. Start a new run.', 409);
+  campaignView(session);
+
+  const started = Date.now();
+  const pending = session.pending;
+  session.pending = null;
+  const { room, notice } = await loadRoom(classic ? 'classic' : session.mode, level, classic ? null : pending);
+
+  // Another request (e.g. "play classic instead") may have advanced the run while we waited.
+  if (session.state !== from) return levelResponse(sessionId, session, { started });
+
+  session.state = createGame(room, Date.now(), { level, achievements: from.achievements });
+  prefetchNext(session);
+  return levelResponse(sessionId, session, { notice, started });
+}
+
+// Replays the current level's room from scratch after running out of time.
+export function retryLevel(sessionId) {
+  const session = requireSession(sessionId);
+  const from = session.state;
+  if (status(from) === 'escaped') throw new GameError('You already escaped this room.', 409);
+  session.state = createGame(from.room, Date.now(), { level: from.level.number, achievements: from.achievements });
+  return levelResponse(sessionId, session);
 }
 
 function requireSession(sessionId) {
@@ -60,7 +119,8 @@ function requireSession(sessionId) {
 
 export async function playTurn(sessionId, rawInput) {
   const started = Date.now();
-  const { state } = requireSession(sessionId);
+  const session = requireSession(sessionId);
+  const { state } = session;
   const { room } = state;
   const meta = { parser: 'none', narrator: 'engine', guard: 'passed', aiError: null };
 
@@ -71,7 +131,7 @@ export async function playTurn(sessionId, rawInput) {
   if (detectInjection(input)) {
     const outcome = recordInjectionAttempt(state);
     meta.guard = 'input_blocked';
-    return finish(state, outcome, outcome.message, meta, started);
+    return finish(session, outcome, outcome.message, meta, started);
   }
 
   let action = parseLocal(input, room);
@@ -104,24 +164,26 @@ export async function playTurn(sessionId, rawInput) {
     }
   }
 
-  return finish(state, outcome, narration, meta, started, action);
+  return finish(session, outcome, narration, meta, started, action);
 }
 
 export function takeHint(sessionId) {
-  const { state } = requireSession(sessionId);
-  const outcome = getHint(state);
-  return finish(state, { ...outcome, achievements: [] }, outcome.message, { parser: 'none', narrator: 'engine', guard: 'passed' }, Date.now());
+  const session = requireSession(sessionId);
+  const outcome = getHint(session.state);
+  return finish(session, { ...outcome, achievements: [] }, outcome.message, { parser: 'none', narrator: 'engine', guard: 'passed' }, Date.now());
 }
 
-function finish(state, outcome, narration, meta, started, action = null) {
+function finish(session, outcome, narration, meta, started, action = null) {
   if (meta.aiError) console.warn('[v2] Gemini fallback:', meta.aiError);
   return {
     narration,
     event: outcome.event,
     success: outcome.success,
     item: outcome.item || null,
+    penaltyMs: outcome.penaltyMs || 0,
     achievements: outcome.achievements || [],
-    state: publicState(state),
+    state: publicState(session.state),
+    campaign: campaignView(session),
     meta: { ...meta, aiError: meta.aiError ? 'fallback_used' : null, action, latencyMs: Date.now() - started },
   };
 }

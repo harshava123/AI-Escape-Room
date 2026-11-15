@@ -37,7 +37,7 @@ export function normalize(input) {
 const action = (intent, extra = {}) => ({ intent, target: 'none', item: 'none', code: '', ...extra });
 
 export function parseLocal(input, room) {
-  const text = normalize(input);
+  const text = normalize(input).replace(/^(?:i|i'll|i will|i want to|i try to|let me|try to)\s+(?=\S+\s)/, '');
   if (!text) return null;
   const idx = buildIndex(room);
 

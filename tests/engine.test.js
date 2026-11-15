@@ -79,6 +79,7 @@ test('hints escalate per stage, the last one is generated from room data', () =>
 test('actions after the timer expires are refused', () => {
   const now = Date.now();
   const state = createGame(classicRoom(), now);
+  applyAction(state, act('look'), now);
   const out = applyAction(state, act('enter', { code: '0745', target: 'lockbox' }), now + 16 * 60 * 1000);
   assert.equal(out.event, 'timeout');
   assert.equal(state.flags.lockboxOpen, false);
