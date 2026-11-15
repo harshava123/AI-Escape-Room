@@ -1,13 +1,15 @@
-// Orchestrates one player turn:
-//   sanitize -> injection check -> parse (local, then Gemini) -> engine -> narrate -> output guard
+// Orchestrates games and turns.
+//   new game: (AI mode) Gemini designs a room -> validateRoom -> fallback to classic room
+//   turn:     sanitize -> injection check -> parse (local, then Gemini) -> engine -> narrate -> output guard
 
 import { createGame, applyAction, getHint, publicState, recordInjectionAttempt } from './engine.js';
 import { parseLocal } from './parser.js';
 import { parseWithGemini, narrate } from './ai.js';
 import { sanitizeInput, detectInjection, checkNarration } from './guard.js';
 import { geminiConfigured } from './gemini.js';
+import { generateRoom } from './generator.js';
+import { classicRoom } from './rooms/classic.js';
 import { createSession, getSession } from './sessions.js';
-import { ROOM } from './room.js';
 
 // Engine messages for these events are already precise; rephrasing adds risk, not value.
 const SKIP_NARRATION = new Set(['inventory', 'help', 'hint', 'game_over', 'noop']);
@@ -19,15 +21,34 @@ export class GameError extends Error {
   }
 }
 
-export function startGame() {
-  const state = createGame();
+export async function startGame({ mode = 'classic' } = {}) {
+  let room;
+  let notice = null;
+  const started = Date.now();
+
+  if (mode === 'ai') {
+    if (!geminiConfigured()) {
+      notice = 'No GEMINI_API_KEY configured - loading the classic room instead.';
+    } else {
+      try {
+        room = await generateRoom();
+      } catch (err) {
+        console.warn('[v2] room generation failed:', err.message);
+        notice = 'ECHO could not build a valid new room this time - loading the classic room instead.';
+      }
+    }
+  }
+  room ??= classicRoom();
+
+  const state = createGame(room);
   const sessionId = createSession(state);
   return {
     sessionId,
-    narration: ROOM.intro,
+    narration: room.intro,
     event: 'intro',
+    notice,
     state: publicState(state),
-    ai: { enabled: geminiConfigured() },
+    ai: { enabled: geminiConfigured(), generated: room.aiGenerated, generationMs: Date.now() - started },
   };
 }
 
@@ -40,6 +61,7 @@ function requireSession(sessionId) {
 export async function playTurn(sessionId, rawInput) {
   const started = Date.now();
   const { state } = requireSession(sessionId);
+  const { room } = state;
   const meta = { parser: 'none', narrator: 'engine', guard: 'passed', aiError: null };
 
   const clean = sanitizeInput(rawInput);
@@ -52,11 +74,11 @@ export async function playTurn(sessionId, rawInput) {
     return finish(state, outcome, outcome.message, meta, started);
   }
 
-  let action = parseLocal(input);
+  let action = parseLocal(input, room);
   if (action) meta.parser = 'local';
   else if (geminiConfigured()) {
     try {
-      action = await parseWithGemini(input);
+      action = await parseWithGemini(input, room);
       meta.parser = 'gemini';
     } catch (err) {
       meta.aiError = err.message;
@@ -69,8 +91,8 @@ export async function playTurn(sessionId, rawInput) {
 
   if (geminiConfigured() && !SKIP_NARRATION.has(outcome.event)) {
     try {
-      const candidate = await narrate({ input, outcome });
-      const verdict = checkNarration(candidate, { canonical: outcome.message, event: outcome.event, known: state.known });
+      const candidate = await narrate({ input, outcome, room });
+      const verdict = checkNarration(candidate, { canonical: outcome.message, event: outcome.event, known: state.known, room });
       if (verdict.ok) {
         narration = candidate;
         meta.narrator = 'gemini';

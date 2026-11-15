@@ -1,6 +1,6 @@
 // Input and output guardrails around the LLM.
 
-import { SECRET_PATTERNS } from './room.js';
+import { codePattern, passwordPattern } from './room-format.js';
 
 export const MAX_INPUT_LENGTH = 300;
 const MAX_NARRATION_LENGTH = 600;
@@ -32,9 +32,9 @@ export function detectInjection(text) {
   return INJECTION_PATTERNS.some((re) => re.test(text));
 }
 
-const FALSE_ESCAPE = /\b(you (have )?escaped|you are free|you're free|door (swings|slides|bursts)? ?open|you (walk|step|run) out)\b/i;
+const FALSE_ESCAPE = /\b(you (have )?escaped|you are free|you're free|(door|gate|hatch|exit) (swings|slides|bursts|creaks|grinds)? ?open|you (walk|step|run) out)\b/i;
 
-// Facts the narration must keep word-for-word (numbers, times, passwords, item names).
+// Facts the narration must keep word-for-word (numbers, times, passwords).
 function requiredFacts(canonical) {
   const facts = new Set();
   for (const m of canonical.matchAll(/\b\d{1,2}:\d{2}\b|\b\d{4}\b|\b[A-Z]{4,}\b/g)) {
@@ -46,13 +46,13 @@ function requiredFacts(canonical) {
 }
 
 // Returns { ok: true } or { ok: false, reason } for a candidate LLM narration.
-export function checkNarration(narration, { canonical, event, known }) {
+export function checkNarration(narration, { canonical, event, known, room }) {
   if (!narration || typeof narration !== 'string') return { ok: false, reason: 'empty' };
   if (narration.length > MAX_NARRATION_LENGTH) return { ok: false, reason: 'too_long' };
 
-  for (const [key, patterns] of Object.entries(SECRET_PATTERNS)) {
-    if (known.includes(key)) continue;
-    if (patterns.some((re) => re.test(narration) && !re.test(canonical))) return { ok: false, reason: `leak:${key}` };
+  const secrets = { code: codePattern(room.code), password: passwordPattern(room.password) };
+  for (const [key, re] of Object.entries(secrets)) {
+    if (!known.includes(key) && re.test(narration) && !re.test(canonical)) return { ok: false, reason: `leak:${key}` };
   }
 
   if (event !== 'escaped' && FALSE_ESCAPE.test(narration)) return { ok: false, reason: 'false_escape' };

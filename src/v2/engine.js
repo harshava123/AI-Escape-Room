@@ -1,28 +1,30 @@
 // Deterministic game engine. It is the single source of truth for game state:
-// the LLM can phrase things, but only this module decides what happens.
+// the LLM can design the room's content and phrase things, but only this module
+// decides what happens. It works on puzzle *roles* (see room-format.js), so the
+// same verified rules run every room - hand-made or AI-generated.
 
-import { ROOM, OBJECTS, ITEMS, STAGES, SECRETS } from './room.js';
+import { OBJECT_ROLES, ITEM_ROLES, publicRoom } from './room-format.js';
 
 export const INTENTS = ['look', 'examine', 'take', 'open', 'use', 'enter', 'inventory', 'hint', 'help', 'unknown'];
 
 export const ACHIEVEMENTS = {
   first_item: { title: 'Scavenger', description: 'Pick up your first item.' },
-  red_herring: { title: 'Not Everything Fits', description: 'Try the rusty key on something.' },
+  red_herring: { title: 'Not Everything Fits', description: 'Try the red-herring item on something.' },
   social_engineer: { title: 'Nice Try', description: 'Attempt to trick the AI into revealing answers.' },
-  escaped: { title: 'Free at Last', description: 'Escape Room 404.' },
+  escaped: { title: 'Free at Last', description: 'Escape the room.' },
   no_hints: { title: 'Pure Genius', description: 'Escape without using a single hint.' },
   speedrun: { title: 'Speedrunner', description: 'Escape in under 3 minutes.' },
 };
 
-export function createGame(now = Date.now()) {
+export function createGame(room, now = Date.now()) {
   return {
+    room,
     flags: {
-      clockSeen: false,
-      drawerOpen: false,
+      clueSeen: false,
+      lockboxOpen: false,
       wordRevealed: false,
-      terminalUnlocked: false,
-      ventOpen: false,
-      plantSearched: false,
+      passwordUnlocked: false,
+      decoySearched: false,
       escaped: false,
       timedOut: false,
     },
@@ -34,19 +36,44 @@ export function createGame(now = Date.now()) {
     moves: 0,
     achievements: [],
     startedAt: now,
-    deadline: now + ROOM.timeLimitMs,
+    deadline: now + room.timeLimitMs,
     finishedAt: null,
   };
 }
 
+function stageList(room) {
+  const o = room.objects;
+  const i = room.items;
+  return [
+    { id: 'lockbox', title: `Open the ${o.lockbox.name}` },
+    { id: 'reveal', title: 'Find the hidden password' },
+    { id: 'passwordLock', title: `Unlock the ${o.passwordLock.name}` },
+    { id: 'exitKey', title: `Retrieve the ${i.exitKey.name}` },
+    { id: 'exit', title: `Escape through the ${o.exit.name}` },
+  ];
+}
+
+// Final hint per stage is generated from the room data, so it is always correct.
+function finalHint(room, stageId) {
+  const o = room.objects;
+  const i = room.items;
+  switch (stageId) {
+    case 'lockbox': return `The ${o.codeClue.name} holds the code. Enter ${room.code} on the ${o.lockbox.name}.`;
+    case 'reveal': return `Use the ${i.tool.name} on the ${o.revealSurface.name}.`;
+    case 'passwordLock': return `Type the password ${room.password} into the ${o.passwordLock.name}.`;
+    case 'exitKey': return `Take the ${i.exitKey.name} from the ${o.compartment.name}.`;
+    default: return `Use the ${i.exitKey.name} on the ${o.exit.name}.`;
+  }
+}
+
 export function currentStageIndex(state) {
   const f = state.flags;
-  if (!f.drawerOpen) return 0;
+  if (!f.lockboxOpen) return 0;
   if (!f.wordRevealed) return 1;
-  if (!f.terminalUnlocked) return 2;
-  if (!state.inventory.includes('keycard')) return 3;
+  if (!f.passwordUnlocked) return 2;
+  if (!state.inventory.includes('exitKey')) return 3;
   if (!f.escaped) return 4;
-  return STAGES.length;
+  return 5;
 }
 
 export function status(state, now = Date.now()) {
@@ -73,167 +100,174 @@ function grant(state, id, unlocked) {
   }
 }
 
-function addItem(state, itemId, unlocked) {
-  if (!state.inventory.includes(itemId)) state.inventory.push(itemId);
+function addItem(state, role, unlocked) {
+  if (!state.inventory.includes(role)) state.inventory.push(role);
   grant(state, 'first_item', unlocked);
 }
 
-const has = (state, itemId) => state.inventory.includes(itemId);
+const has = (state, role) => state.inventory.includes(role);
 
 function result(event, message, success = null, extra = {}) {
   return { event, message, success, ...extra };
 }
 
+const nameOf = (room, id) => room.objects[id]?.name || room.items[id]?.name || 'that';
+
 function describe(state, target) {
-  const f = state.flags;
+  const { room, flags: f } = state;
+  const o = room.objects;
+  const i = room.items;
   switch (target) {
-    case 'door':
-      return result('examine', 'A heavy steel door. Beside it, a card reader glows red: "ACCESS CARD REQUIRED".');
-    case 'clock':
-      learn(state, 'clockTime');
-      f.clockSeen = true;
-      return result('clue', 'A cracked wall clock. Its hands are frozen at exactly 7:45. The second hand twitches but never moves.', true);
-    case 'poster':
-      return result('clue', 'A faded motivational poster reads: "TIME REVEALS ALL - the moment everything stopped is your key."', true);
-    case 'desk':
-      return f.drawerOpen
-        ? result('examine', 'A cluttered metal desk. Its drawer hangs open and empty.')
-        : result('examine', 'A cluttered metal desk covered in coffee rings. One drawer is sealed with a 4-digit keypad.');
-    case 'drawer':
-      return f.drawerOpen
-        ? result('examine', 'The drawer is open and empty.')
-        : result('examine', 'The drawer is locked. A small keypad waits for a 4-digit code.');
-    case 'bookshelf':
+    case 'exit':
+      return result('examine', /lock/i.test(o.exit.description) ? o.exit.description : `${o.exit.description} It is locked tight.`);
+    case 'codeClue':
+      f.clueSeen = true;
+      return result('clue', o.codeClue.description, true);
+    case 'riddle':
+      return result('clue', o.riddle.description, true);
+    case 'furniture':
+      return result('examine', o.furniture.description);
+    case 'lockbox':
+      return f.lockboxOpen
+        ? result('examine', `The ${o.lockbox.name} stands open and empty.`)
+        : result('examine', /\b(4|four)[- ]digit\b/i.test(o.lockbox.description) ? o.lockbox.description : `${o.lockbox.description} It is sealed by a 4-digit lock.`);
+    case 'revealSurface':
       return f.wordRevealed
-        ? result('examine', 'Dusty machine learning textbooks. On the back panel, glowing letters spell NEURON.')
-        : result('examine', 'Shelves full of dusty machine learning textbooks. The wooden back panel looks oddly clean, as if something was painted there.');
-    case 'terminal':
-      return f.terminalUnlocked
-        ? result('examine', 'The terminal reads: "ACCESS GRANTED. Vent lock released."')
-        : result('examine', 'An old CRT terminal blinks: "ECHO SECURITY - ENTER PASSWORD". A sticky note on the frame says: "Where knowledge glows in the dark."');
-    case 'vent':
-      if (!f.terminalUnlocked) return result('examine', 'A metal air vent near the floor, sealed by a small electronic lock with a red LED.');
-      if (has(state, 'keycard')) return result('examine', 'The vent grate hangs open. Nothing else is inside.');
-      f.ventOpen = true;
-      return result('examine', 'The vent lock LED is green and the grate has swung open. A white keycard lies inside.', true);
-    case 'plant':
-      if (has(state, 'rusty_key')) return result('examine', 'A dried-out potted plant. You already dug through the soil.');
-      f.plantSearched = true;
-      return result('examine', 'A dried-out potted plant. Something metallic glints in the dry soil - an old rusty key.');
+        ? result('examine', `${o.revealSurface.description} Glowing letters spell ${room.password}.`)
+        : result('examine', o.revealSurface.description);
+    case 'passwordLock':
+      return f.passwordUnlocked
+        ? result('examine', `The ${o.passwordLock.name} shows: ACCESS GRANTED.`)
+        : result('examine', `${o.passwordLock.description} It is waiting for a password.`);
+    case 'compartment':
+      if (!f.passwordUnlocked) return result('examine', `${o.compartment.description} For now it is sealed shut.`);
+      if (has(state, 'exitKey')) return result('examine', `The ${o.compartment.name} is open and empty.`);
+      return result('examine', `The ${o.compartment.name} has swung open. Inside lies the ${i.exitKey.name}.`, true);
+    case 'decoy':
+      if (has(state, 'decoyItem')) return result('examine', `${o.decoy.description} You already searched it.`);
+      f.decoySearched = true;
+      return result('examine', `${o.decoy.description} Something is hidden here - a ${i.decoyItem.name}.`);
     default:
-      if (ITEMS[target] && has(state, target)) return result('examine', ITEMS[target].description);
+      if (room.items[target] && has(state, target)) return result('examine', room.items[target].description);
       return result('unknown_target', "You don't see anything like that here.", false);
   }
 }
 
 function take(state, target, unlocked) {
-  if (target === 'keycard') {
-    if (has(state, 'keycard')) return result('noop', 'You already have the keycard.');
-    if (!state.flags.terminalUnlocked) return result('unknown_target', "You don't see a keycard anywhere.", false);
-    state.flags.ventOpen = true;
-    addItem(state, 'keycard', unlocked);
-    return result('item', 'You reach into the open vent and take the keycard.', true, { item: 'keycard' });
+  const { room } = state;
+  const i = room.items;
+  if (target === 'exitKey') {
+    if (has(state, 'exitKey')) return result('noop', `You already have the ${i.exitKey.name}.`);
+    if (!state.flags.passwordUnlocked) return result('unknown_target', `You don't see a ${i.exitKey.name} anywhere.`, false);
+    addItem(state, 'exitKey', unlocked);
+    return result('item', `You reach into the ${room.objects.compartment.name} and take the ${i.exitKey.name}.`, true, { item: 'exitKey' });
   }
-  if (target === 'rusty_key' || target === 'plant') {
-    if (has(state, 'rusty_key')) return result('noop', 'You already have the rusty key.');
-    state.flags.plantSearched = true;
-    addItem(state, 'rusty_key', unlocked);
-    return result('item', 'You dig the rusty key out of the dry soil.', true, { item: 'rusty_key' });
+  if (target === 'decoyItem' || target === 'decoy') {
+    if (has(state, 'decoyItem')) return result('noop', `You already have the ${i.decoyItem.name}.`);
+    state.flags.decoySearched = true;
+    addItem(state, 'decoyItem', unlocked);
+    return result('item', `You pull the ${i.decoyItem.name} out of the ${room.objects.decoy.name}.`, true, { item: 'decoyItem' });
   }
-  if (target === 'uv_flashlight') {
-    if (has(state, 'uv_flashlight')) return result('noop', 'You already have the UV flashlight.');
-    return result('unknown_target', "You don't see a flashlight anywhere.", false);
+  if (target === 'tool') {
+    if (has(state, 'tool')) return result('noop', `You already have the ${i.tool.name}.`);
+    return result('unknown_target', `You don't see a ${i.tool.name} anywhere.`, false);
   }
-  if (OBJECTS[target]) return result('noop', `The ${OBJECTS[target].name} is not something you can carry.`, false);
+  if (room.objects[target]) return result('noop', `The ${room.objects[target].name} is not something you can carry.`, false);
   return result('unknown_target', "There's nothing like that to take.", false);
 }
 
 function open(state, target) {
-  const f = state.flags;
+  const { room, flags: f } = state;
+  const o = room.objects;
   switch (target) {
-    case 'door':
-      return result('locked', 'The door does not budge. The card reader blinks red.', false);
-    case 'drawer':
-    case 'desk':
-      return f.drawerOpen
-        ? result('noop', 'The drawer is already open.')
-        : result('locked', 'The drawer is locked. The keypad wants a 4-digit code.', false);
-    case 'vent':
-      return f.terminalUnlocked ? describe(state, 'vent') : result('locked', 'The vent is held shut by an electronic lock.', false);
-    case 'terminal':
-      return describe(state, 'terminal');
+    case 'exit':
+      return result('locked', `The ${o.exit.name} does not budge.`, false);
+    case 'lockbox':
+      return f.lockboxOpen
+        ? result('noop', `The ${o.lockbox.name} is already open.`)
+        : result('locked', `The ${o.lockbox.name} is locked. Its keypad wants a 4-digit code.`, false);
+    case 'compartment':
+      return f.passwordUnlocked ? describe(state, 'compartment') : result('locked', `The ${o.compartment.name} is sealed shut by a lock.`, false);
+    case 'passwordLock':
+      return describe(state, 'passwordLock');
     default:
       return result('noop', "That isn't something you can open.", false);
   }
 }
 
 function enter(state, code, target, unlocked) {
+  const { room } = state;
+  const o = room.objects;
   const cleaned = String(code || '').trim();
-  if (!cleaned) return result('noop', 'Enter what? Try something like "enter 1234 on the drawer".', false);
+  if (!cleaned) return result('noop', `Enter what? Try something like "enter 1234 on the ${o.lockbox.name}".`, false);
 
-  const resolvedTarget = target && target !== 'none' ? target : /^\d+$/.test(cleaned) ? 'drawer' : 'terminal';
+  const resolved = target && target !== 'none' ? target : /^\d+$/.test(cleaned) ? 'lockbox' : 'passwordLock';
 
-  if (resolvedTarget === 'drawer' || resolvedTarget === 'desk') {
-    if (state.flags.drawerOpen) return result('noop', 'The drawer is already open.');
-    if (cleaned.replace(/\D/g, '') === SECRETS.drawerCode) {
-      state.flags.drawerOpen = true;
-      learn(state, 'drawerCode');
-      addItem(state, 'uv_flashlight', unlocked);
-      return result('unlock', 'The keypad beeps twice and the drawer slides open. Inside is a UV flashlight - you take it.', true, {
-        item: 'uv_flashlight',
+  if (resolved === 'lockbox' || resolved === 'furniture') {
+    if (state.flags.lockboxOpen) return result('noop', `The ${o.lockbox.name} is already open.`);
+    if (cleaned.replace(/\D/g, '') === room.code) {
+      state.flags.lockboxOpen = true;
+      learn(state, 'code');
+      addItem(state, 'tool', unlocked);
+      return result('unlock', `The keypad beeps twice and the ${o.lockbox.name} swings open. Inside is the ${room.items.tool.name} - you take it.`, true, {
+        item: 'tool',
       });
     }
     state.wrongAttempts++;
     return result('wrong_code', `The keypad flashes red: "${cleaned.slice(0, 8)}" - INVALID CODE.`, false);
   }
 
-  if (resolvedTarget === 'terminal') {
-    if (state.flags.terminalUnlocked) return result('noop', 'The terminal is already unlocked.');
-    if (cleaned.toUpperCase() === SECRETS.password) {
-      state.flags.terminalUnlocked = true;
+  if (resolved === 'passwordLock') {
+    if (state.flags.passwordUnlocked) return result('noop', `The ${o.passwordLock.name} is already unlocked.`);
+    if (cleaned.toUpperCase() === room.password) {
+      state.flags.passwordUnlocked = true;
       learn(state, 'password');
-      return result('unlock', 'The terminal chimes: "ACCESS GRANTED. Vent lock released." Across the room, something clicks.', true);
+      return result('unlock', `The ${o.passwordLock.name} chimes: ACCESS GRANTED. Across the room, the ${o.compartment.name} clicks open.`, true);
     }
     state.wrongAttempts++;
-    return result('wrong_code', 'The terminal buzzes: "ACCESS DENIED."', false);
+    return result('wrong_code', `The ${o.passwordLock.name} buzzes: ACCESS DENIED.`, false);
   }
 
-  return result('noop', `There is nowhere on the ${OBJECTS[resolvedTarget]?.name || 'that'} to enter a code.`, false);
+  return result('noop', `There is nowhere on the ${nameOf(room, resolved)} to enter a code.`, false);
 }
 
 function use(state, item, target, unlocked, now) {
+  const { room } = state;
   if (!item || item === 'none') {
-    if (target === 'terminal') return describe(state, 'terminal');
+    if (target === 'passwordLock') return describe(state, 'passwordLock');
     return open(state, target);
   }
-  if (!ITEMS[item]) return result('unknown_target', "You don't have anything like that.", false);
-  if (!has(state, item)) return result('missing_item', `You don't have the ${ITEMS[item].name}.`, false);
-  if (!target || target === 'none') return result('noop', `Use the ${ITEMS[item].name} on what?`, false);
+  if (!room.items[item]) return result('unknown_target', "You don't have anything like that.", false);
+  if (!has(state, item)) return result('missing_item', `You don't have the ${room.items[item].name}.`, false);
+  if (!target || target === 'none') return result('noop', `Use the ${room.items[item].name} on what?`, false);
 
-  if (item === 'rusty_key') {
+  const itemName = room.items[item].name;
+  const targetName = nameOf(room, target);
+
+  if (item === 'decoyItem') {
     grant(state, 'red_herring', unlocked);
-    return result('red_herring', `You try the rusty key on the ${OBJECTS[target]?.name || target}. It doesn't fit anything in this lab.`, false);
+    return result('red_herring', `You try the ${itemName} on the ${targetName}. It doesn't work on anything in this room.`, false);
   }
 
-  if (item === 'uv_flashlight') {
-    if (target === 'bookshelf') {
+  if (item === 'tool') {
+    if (target === 'revealSurface') {
       state.flags.wordRevealed = true;
       learn(state, 'password');
-      return result('reveal', 'Under the UV beam, glowing letters appear on the bookshelf back panel: NEURON.', true);
+      return result('reveal', `You use the ${itemName} on the ${targetName}. Hidden letters appear: ${room.password}.`, true);
     }
-    return result('noop', `You sweep the UV light over the ${OBJECTS[target]?.name || target}. Nothing glows.`, false);
+    return result('noop', `You try the ${itemName} on the ${targetName}. Nothing is revealed.`, false);
   }
 
-  if (item === 'keycard') {
-    if (target === 'door') {
+  if (item === 'exitKey') {
+    if (target === 'exit') {
       state.flags.escaped = true;
       state.finishedAt = now;
       grant(state, 'escaped', unlocked);
       if (state.hintsUsed === 0) grant(state, 'no_hints', unlocked);
       if (now - state.startedAt < 3 * 60 * 1000) grant(state, 'speedrun', unlocked);
-      return result('escaped', 'You swipe the keycard. The reader turns green, the locks thunder open and cold fresh air rushes in. You are free!', true);
+      return result('escaped', `You use the ${itemName} on the ${targetName}. ${room.escapeText}`, true);
     }
-    return result('noop', `Nothing happens when you use the keycard on the ${OBJECTS[target]?.name || target}.`, false);
+    return result('noop', `Nothing happens when you use the ${itemName} on the ${targetName}.`, false);
   }
 
   return result('noop', 'Nothing happens.', false);
@@ -241,16 +275,18 @@ function use(state, item, target, unlocked, now) {
 
 export function getHint(state) {
   const idx = currentStageIndex(state);
-  if (idx >= STAGES.length) return result('hint', 'You have already escaped!');
-  const stage = STAGES[idx];
-  const tier = Math.min(state.hintTier[stage.id] || 0, stage.hints.length - 1);
+  const stages = stageList(state.room);
+  if (idx >= stages.length) return result('hint', 'You have already escaped!');
+  const stage = stages[idx];
+  const hints = [...state.room.hints[stage.id], finalHint(state.room, stage.id)];
+  const tier = Math.min(state.hintTier[stage.id] || 0, hints.length - 1);
   state.hintTier[stage.id] = tier + 1;
   state.hintsUsed++;
-  if (tier === stage.hints.length - 1) {
-    if (stage.id === 'drawer') learn(state, 'drawerCode');
-    if (stage.id === 'reveal' || stage.id === 'terminal') learn(state, 'password');
+  if (tier === hints.length - 1) {
+    if (stage.id === 'lockbox') learn(state, 'code');
+    if (stage.id === 'reveal' || stage.id === 'passwordLock') learn(state, 'password');
   }
-  return result('hint', stage.hints[tier], null, { hintTier: tier + 1 });
+  return result('hint', hints[tier], null, { hintTier: tier + 1 });
 }
 
 export function recordInjectionAttempt(state) {
@@ -273,15 +309,16 @@ export function applyAction(state, action, now = Date.now()) {
 
   const unlocked = [];
   const { intent, target, item, code } = action;
+  const { room } = state;
   state.moves++;
 
   let out;
   switch (intent) {
     case 'look':
-      out = result('look', ROOM.intro);
+      out = result('look', room.intro);
       break;
     case 'examine':
-      out = target && target !== 'none' ? describe(state, target) : result('look', ROOM.intro);
+      out = target && target !== 'none' ? describe(state, target) : result('look', room.intro);
       break;
     case 'take':
       out = take(state, target, unlocked);
@@ -298,7 +335,7 @@ export function applyAction(state, action, now = Date.now()) {
     case 'inventory':
       out = result(
         'inventory',
-        state.inventory.length ? `You are carrying: ${state.inventory.map((i) => ITEMS[i].name).join(', ')}.` : 'Your pockets are empty.',
+        state.inventory.length ? `You are carrying: ${state.inventory.map((r) => room.items[r].name).join(', ')}.` : 'Your pockets are empty.',
       );
       break;
     case 'hint':
@@ -307,7 +344,8 @@ export function applyAction(state, action, now = Date.now()) {
     case 'help':
       out = result(
         'help',
-        'Try commands like "look around", "examine the clock", "enter 1234 on the drawer", "use flashlight on bookshelf", "take keycard" or ask for a hint.',
+        `Try commands like "look around", "examine the ${room.objects.codeClue.name}", "enter 1234 on the ${room.objects.lockbox.name}", ` +
+          `"use ${room.items.tool.name} on something" or ask for a hint.`,
       );
       break;
     default:
@@ -318,19 +356,22 @@ export function applyAction(state, action, now = Date.now()) {
 }
 
 export function publicState(state, now = Date.now()) {
+  const { room, flags: f } = state;
   const stageIdx = currentStageIndex(state);
+  const stages = stageList(room);
   return {
     status: status(state, now),
-    inventory: state.inventory.map((id) => ({ id, name: ITEMS[id].name, description: ITEMS[id].description })),
-    stages: STAGES.map((s, i) => ({ id: s.id, title: i <= stageIdx ? s.title : '???', done: i < stageIdx })),
+    room: publicRoom(room),
+    inventory: state.inventory.map((r) => ({ id: r, name: room.items[r].name, icon: room.items[r].icon, description: room.items[r].description })),
+    stages: stages.map((s, i) => ({ id: s.id, title: i <= stageIdx ? s.title : '???', done: i < stageIdx })),
     stageIndex: stageIdx,
-    progress: Math.round((stageIdx / STAGES.length) * 100),
+    progress: Math.round((stageIdx / stages.length) * 100),
     objects: {
-      drawer: state.flags.drawerOpen ? 'open' : 'locked',
-      terminal: state.flags.terminalUnlocked ? 'unlocked' : 'locked',
-      vent: state.flags.terminalUnlocked ? 'open' : 'locked',
-      door: state.flags.escaped ? 'open' : 'locked',
-      bookshelf: state.flags.wordRevealed ? 'revealed' : 'normal',
+      lockbox: f.lockboxOpen ? 'open' : 'locked',
+      passwordLock: f.passwordUnlocked ? 'unlocked' : 'locked',
+      compartment: f.passwordUnlocked ? 'open' : 'locked',
+      exit: f.escaped ? 'open' : 'locked',
+      revealSurface: f.wordRevealed ? 'revealed' : 'normal',
     },
     hintsUsed: state.hintsUsed,
     wrongAttempts: state.wrongAttempts,
@@ -341,3 +382,5 @@ export function publicState(state, now = Date.now()) {
     achievements: state.achievements.map((id) => ({ id, ...ACHIEVEMENTS[id] })),
   };
 }
+
+export { OBJECT_ROLES, ITEM_ROLES };

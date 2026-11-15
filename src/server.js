@@ -69,7 +69,7 @@ const routes = {
   'POST /api/v1/reset': async (body) => (resetV1(body.sessionId), { ok: true }),
 
   // Version 2
-  'POST /api/v2/new': async () => startGame(),
+  'POST /api/v2/new': async (body) => startGame({ mode: body.mode === 'ai' ? 'ai' : 'classic' }),
   'POST /api/v2/action': async (body) => playTurn(body.sessionId, body.input),
   'POST /api/v2/hint': async (body) => takeHint(body.sessionId),
 };
@@ -83,8 +83,12 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 404, { error: 'Not found' });
   }
 
-  if (pathname.startsWith('/api/v2') && rateLimited(req.socket.remoteAddress || 'unknown')) {
+  const ip = req.socket.remoteAddress || 'unknown';
+  if (pathname.startsWith('/api/v2') && rateLimited(ip)) {
     return sendJson(res, 429, { error: 'Too many requests - slow down a little.' });
+  }
+  if (pathname === '/api/v2/new' && rateLimited(`new:${ip}`, 8)) {
+    return sendJson(res, 429, { error: 'Too many new games in a minute - give ECHO a moment.' });
   }
 
   try {

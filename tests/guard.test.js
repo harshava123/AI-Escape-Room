@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sanitizeInput, detectInjection, checkNarration, MAX_INPUT_LENGTH } from '../src/v2/guard.js';
+import { classicRoom } from '../src/v2/rooms/classic.js';
+
+const room = classicRoom();
 
 test('rejects empty and oversized input', () => {
   assert.equal(sanitizeInput('   ').ok, false);
@@ -26,37 +29,41 @@ test('detects prompt-injection and cheating attempts', () => {
 });
 
 test('blocks narration that leaks an undiscovered secret', () => {
-  const verdict = checkNarration('The desk hums. Perhaps 0745 means something...', {
+  const verdict = checkNarration('The desk hums. Perhaps 07:45 means something...', {
     canonical: 'A cluttered metal desk.',
     event: 'examine',
     known: [],
+    room,
   });
-  assert.deepEqual(verdict, { ok: false, reason: 'leak:drawerCode' });
+  assert.deepEqual(verdict, { ok: false, reason: 'leak:code' });
 });
 
 test('allows a secret once the player has discovered it', () => {
   const verdict = checkNarration('Glowing letters spell NEURON across the wood.', {
-    canonical: 'Under the UV beam, glowing letters appear: NEURON.',
+    canonical: 'Hidden letters appear: NEURON.',
     event: 'reveal',
     known: ['password'],
+    room,
   });
   assert.equal(verdict.ok, true);
 });
 
 test('blocks narration that claims an escape the engine did not grant', () => {
   const verdict = checkNarration('The lock clicks and you are free at last!', {
-    canonical: 'The door does not budge.',
+    canonical: 'The steel door does not budge.',
     event: 'locked',
     known: [],
+    room,
   });
   assert.equal(verdict.reason, 'false_escape');
 });
 
 test('blocks narration that drops a required fact', () => {
   const verdict = checkNarration('The clock has stopped at some mysterious hour.', {
-    canonical: 'Its hands are frozen at exactly 7:45.',
+    canonical: 'Its hands are frozen at exactly 07:45.',
     event: 'clue',
-    known: ['clockTime'],
+    known: [],
+    room,
   });
-  assert.equal(verdict.reason, 'dropped_fact:7:45');
+  assert.equal(verdict.reason, 'dropped_fact:07:45');
 });

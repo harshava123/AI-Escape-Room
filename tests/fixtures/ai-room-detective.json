@@ -1,0 +1,30 @@
+{
+  "name": "The Detective's Secret Archive",
+  "theme": "a 1920s detective's office",
+  "intro": "You step into a dimly lit 1920s detective's office smelling of stale tobacco and old paper. Heavy velvet drapes block out the city lights, illuminating a mahogany desk, a brass compass, an iron safe, a framed parchment, a silver cipher wheel, an oak filing cabinet, and a coat rack. A sturdy oak door leads back out to the corridor.",
+  "escapeText": "The heavy oak door clicks open, allowing you to slip out into the foggy alleyway before the mob catches up.",
+  "password": "FALCON",
+  "objects": {
+    "exit": { "name": "oak door", "description": "A thick oak door fitted with a heavy brass deadbolt. It is locked tight.", "icon": "door", "aliases": ["door", "exit door", "heavy door"] },
+    "codeClue": { "name": "brass compass", "description": "A heavy nautical brass compass. Scratched delicately onto the underside of its lid is the date 5/9/24.", "icon": "clock", "aliases": ["compass", "pocket compass"] },
+    "riddle": { "name": "framed parchment", "description": "A yellowed document in a wooden frame. It reads: 'True north points not to stars, but to the day the case was solved. Find the needle's home.'", "icon": "note", "aliases": ["parchment", "frame", "framed document"] },
+    "furniture": { "name": "mahogany desk", "description": "A cluttered mahogany desk scattered with empty coffee cups, inkwells, and blank case reports.", "icon": "desk", "aliases": ["desk", "table", "wooden desk"] },
+    "lockbox": { "name": "iron safe", "description": "A sturdy floor safe crafted from cast iron. A 4-digit combination dial protects its contents.", "icon": "safe", "aliases": ["safe", "iron box"] },
+    "revealSurface": { "name": "oak filing cabinet", "description": "A tall filing cabinet filled with folder tabs. Something faint seems smudged across the main drawer front, visible only under polarized light.", "icon": "crate", "aliases": ["filing cabinet", "cabinet", "drawers"] },
+    "passwordLock": { "name": "silver cipher wheel", "description": "A desk cipher device with alphabetical rotors. A small brass plaque beside it reads: 'Examine the files through ruby glass to find the master word.'", "icon": "terminal", "aliases": ["cipher wheel", "cipher", "wheel"] },
+    "compartment": { "name": "secret drawer", "description": "A small compartment under the cipher wheel that pops open when the correct word is aligned.", "icon": "drawer", "aliases": ["drawer", "hidden drawer", "compartment"] },
+    "decoy": { "name": "coat rack", "description": "A tall brass coat rack holding a damp trench coat.", "icon": "statue", "aliases": ["rack", "stand", "coat stand"] }
+  },
+  "items": {
+    "tool": { "name": "red monocle", "description": "A single magnifying lens set in brass with tinted red glass.", "icon": "lens", "aliases": ["monocle", "red glass", "lens"] },
+    "exitKey": { "name": "skeleton key", "description": "An ornate brass skeleton key stamped with the room number.", "icon": "key", "aliases": ["key", "brass key"] },
+    "decoyItem": { "name": "fedora hat", "description": "A stylish felt hat with a silk band. It has no practical use.", "icon": "note", "aliases": ["fedora", "hat"] }
+  },
+  "hints": {
+    "lockbox": ["Read the framed parchment to figure out where the numbers are written.", "The riddle points to the compass. Check its description for four digits to open the iron safe."],
+    "reveal": ["Look inside the iron safe once unlocked to find a useful optic tool.", "Use the red monocle on the oak filing cabinet to reveal what is hidden there."],
+    "passwordLock": ["The hidden writing on the filing cabinet holds the password.", "Enter the uppercase word found on the filing cabinet into the silver cipher wheel."],
+    "exitKey": ["Unlocking the cipher wheel opened a hidden space.", "Look inside the secret drawer to get the key."],
+    "exit": ["You have the key to leave.", "Use the skeleton key on the oak door to escape."]
+  }
+}
