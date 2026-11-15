@@ -221,6 +221,58 @@ lock states and stats. A test asserts that the serialised state never contains `
 
 ---
 
+## TC-12 - AI-generated room is solvable (v2.1)
+
+**Scenario:** Start a game with **GENERATE NEW ROOM** and solve it without knowing anything in advance.
+
+**V2.1 behaviour:** Gemini designs the room. `validateRoom` checks that the code clue contains the server-chosen
+4-digit code, that the password is 4-10 letters, and that every hint stage has hints. Then the role-based engine runs it.
+`tests/room.test.js` replays a real generated room ("The Detective's Secret Archive", stored in `tests/fixtures/`) using
+free-form commands only. `npm run playtest` does the same live against a freshly generated room, for example
+"Neon Syndicate Haven", a cyberpunk room generated in 13 s that reached `ESCAPED` with a score of 506.
+
+**Result:** Pass.
+
+---
+
+## TC-13 - AI room that leaks its own answers (v2.1)
+
+**Scenario:** The model writes a room where a hint, the intro or an object name contains the password, or the code
+appears outside the code clue, or the clue never contains the code (unsolvable).
+
+**V2.1 behaviour:** `validateRoom` rejects the room with a list of problems. The generator retries once, sending the
+problems back to Gemini. If the second design also fails, the game starts the classic room and shows a notice.
+Tests cover the leaked password, the leaked code and the missing-clue cases.
+
+**Result:** Pass.
+
+---
+
+## TC-14 - Malicious markup in AI room text (v2.1)
+
+**Scenario:** The generated room contains `<img src=x onerror=alert(1)>` in an object name.
+
+**V2.1 behaviour:** `cleanText` strips `<`, `>` and backticks on the server, and the UI HTML-escapes every room string
+before rendering it. A test asserts the stored name contains no angle brackets.
+
+**Result:** Pass.
+
+---
+
+## TC-15 - Room generation fails or is slow (v2.1)
+
+**Scenario:** No API key, an invalid model, HTTP 429/503, or a model that times out while designing the room.
+
+**V2.1 behaviour:** `startGame({ mode: 'ai' })` catches every generation error and falls back to the classic room
+with a visible notice ("ECHO could not build a valid new room this time - loading the classic room instead.").
+Without a key, the **GENERATE NEW ROOM** button is disabled and labelled. During generation the player can press
+**Play classic instead**, which aborts the request.
+
+**Result:** Pass. Verified with `GEMINI_MODEL=not-a-real-model`: `POST /api/v2/new {"mode":"ai"}` returned the classic
+room with the notice and `ai.generated: false` after 295 ms.
+
+---
+
 ## Running the tests
 
 ```bash
@@ -230,7 +282,7 @@ npm test
 Expected output (summary):
 
 ```
-ℹ tests 29
-ℹ pass 29
+ℹ tests 38
+ℹ pass 38
 ℹ fail 0
 ```

@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0] - AI-generated rooms
+
+### Added
+- **AI room generator** (`src/v2/generator.js`): Gemini designs a brand-new room every game (setting, objects, riddle, clue, reveal mechanic, items, password, hints) using a JSON response schema.
+- Randomness from the server: a 4-digit code (`crypto.randomInt`), 32 settings, 7 code-clue styles and 7 reveal mechanics, avoiding recently used settings.
+- Room validation (`src/v2/room-format.js`): checks that the room is solvable and keeps its secrets (no leaked code or password, unique names and aliases, markup stripped). An invalid design is retried once with feedback, then the game falls back to the classic room.
+- UI: mode choice (**GENERATE NEW ROOM** / **CLASSIC**), a room-construction screen with a cancel option, dynamic room header, hotspots and icons for generated objects.
+- `npm run playtest`: generates a live AI room and plays it to the end through the HTTP API.
+- 9 new tests (38 total), including a full playthrough of a real Gemini-generated room fixture.
+
+### Changed
+- The engine, parser, guards and AI prompts are role-based and work with any validated room. The classic room moved to `src/v2/rooms/classic.js`.
+- The default model is now `gemini-3.5-flash` (`gemini-2.5-flash` returns 404 for new API keys). The thinking configuration adapts to the model generation.
+- Narration fails fast (7 s, no retry) and falls back to engine text, so slow API responses no longer stall a turn.
+
 ## [2.0.0] - Engine + AI narrator
 
 ### Added
