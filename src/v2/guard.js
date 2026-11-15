@@ -25,6 +25,7 @@ const INJECTION_PATTERNS = [
   /\b(reveal|tell|give|show|leak|print|what(?:'s| is))\b.{0,30}\b(code|password|solution|answer|secret)s?\b/i,
   /\b(i|we) (have )?(already )?(escaped|won|win)\b/i,
   /\b(mark|set|declare)\b.{0,20}\b(escaped|won|complete|solved)\b/i,
+  /\[\s*escaped\s*\]/i,
 ];
 
 export function detectInjection(text) {

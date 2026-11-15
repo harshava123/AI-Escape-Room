@@ -76,7 +76,7 @@ export function parseLocal(input) {
   }
 
   // Word passwords: "type neuron into terminal", "password is neuron".
-  const typed = text.match(/\b(?:type|enter|input|key in|punch in|submit|password is|password|say)\s+'?([a-z]{3,20})'?\b/);
+  const typed = text.match(/\b(?:type|enter|input|key in|punch in|submit|password is|password)\s+'?([a-z]{3,20})'?\b/);
   if (typed && !findEntity(typed[1], ALL_INDEX) && !/^(into|onto|code|password|word|something|what|it|is|in|on)$/.test(typed[1])) {
     const obj = findEntity(text, OBJECT_INDEX);
     return action('enter', { code: typed[1], target: obj ? obj.id : 'none' });
