@@ -75,6 +75,7 @@ export async function narrate({ input, outcome, room }) {
     system: narratorSystem(room),
     prompt: `PLAYER_INPUT: """${input}"""\nOUTCOME_TYPE: ${outcome.event}\nOUTCOME: """${outcome.message}"""`,
     temperature: 0.9,
-    timeoutMs: 10000,
+    timeoutMs: 7000,
+    retries: 0,
   });
 }

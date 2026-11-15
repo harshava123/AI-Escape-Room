@@ -143,6 +143,20 @@ a { color: var(--cyan); }
 .title-xl { font-size: clamp(3rem, 11vw, 7rem); }
 .subtitle { font-family: var(--display); letter-spacing: 0.6em; color: var(--magenta); margin: 0.5rem 0 2.5rem; text-shadow: 0 0 12px var(--magenta); }
 .boot-tip { color: var(--muted); font-size: 0.8rem; margin-top: 1.5rem; }
+.mode-buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- Room forge (AI generation) ---------- */
+#forge { z-index: 75; background: radial-gradient(ellipse at 50% 30%, rgba(11, 20, 48, 0.97), rgba(4, 5, 11, 0.99)); backdrop-filter: blur(6px); }
+.forge-box { text-align: center; max-width: 620px; padding: 2rem; }
+.forge-box h2 { font-size: clamp(1.4rem, 4vw, 2.2rem); margin: 1.6rem 0 1rem; }
+#forge-log { text-align: left; color: var(--green); font-size: 0.85rem; min-height: 8em; margin: 0 auto 1rem; max-width: 460px; white-space: pre-wrap; text-shadow: 0 0 6px rgba(57, 255, 136, 0.6); }
+.forge-time { font-family: var(--display); color: var(--magenta); letter-spacing: 0.2em; margin-bottom: 1.4rem; }
+.forge-ring { position: relative; width: 120px; height: 120px; margin: 0 auto; }
+.forge-ring span { position: absolute; inset: 0; border-radius: 50%; border: 2px solid transparent; }
+.forge-ring span:nth-child(1) { border-top-color: var(--cyan); animation: spin 1.2s linear infinite; box-shadow: 0 0 20px rgba(0, 240, 255, 0.3); }
+.forge-ring span:nth-child(2) { inset: 14px; border-right-color: var(--magenta); animation: spin 1.8s linear infinite reverse; }
+.forge-ring span:nth-child(3) { inset: 30px; border-bottom-color: var(--green); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .boot-out { animation: boot-out 0.7s forwards; }
 @keyframes boot-out { 60% { transform: scaleY(0.02); opacity: 1; } 100% { transform: scale(0, 0.02); opacity: 0; } }
 .boot-in { animation: boot-in 0.6s ease-out; }
@@ -157,9 +171,15 @@ a { color: var(--cyan); }
   backdrop-filter: blur(6px);
   clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
 }
-.brand h1 { font-size: 1.6rem; }
-.brand-sub { font-size: 0.7rem; letter-spacing: 0.35em; color: var(--magenta); }
+.brand { min-width: 0; max-width: 340px; }
+.brand h1 {
+  font-family: var(--display); font-weight: 900; font-size: 1.15rem; margin: 0; color: #fff; letter-spacing: 0.06em;
+  text-shadow: 0 0 6px var(--cyan), 0 0 18px rgba(0, 240, 255, 0.5);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;
+}
+.brand-sub { display: block; font-size: 0.65rem; letter-spacing: 0.12em; color: var(--magenta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
 .brand-sub em { color: var(--cyan); font-style: normal; border: 1px solid var(--cyan); padding: 0 4px; margin-left: 4px; }
+.brand-sub em.ai { color: var(--green); border-color: var(--green); }
 
 .hud-center { flex: 1; max-width: 460px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .timer { font-family: var(--display); font-size: 1.9rem; font-weight: 700; color: var(--cyan); text-shadow: 0 0 14px var(--cyan); letter-spacing: 0.1em; }
@@ -220,6 +240,7 @@ a { color: var(--cyan); }
   border: 1px solid var(--line); color: var(--text); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
+.hotspot span { padding: 0 3px; text-align: center; line-height: 1.2; letter-spacing: 0; overflow-wrap: break-word; hyphens: auto; max-width: 100%; }
 .hotspot svg { width: 42%; height: 42%; color: var(--cyan); filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.7)); transition: transform 0.2s; }
 .hotspot:hover { transform: translateY(-3px); border-color: var(--cyan); box-shadow: 0 0 18px rgba(0, 240, 255, 0.35), inset 0 0 18px rgba(0, 240, 255, 0.12); }
 .hotspot:hover svg { transform: scale(1.12); }
@@ -374,8 +395,8 @@ a { color: var(--cyan); }
   #app { padding: 10px; gap: 10px; }
   .grid { grid-template-columns: 200px 1fr 180px; gap: 10px; }
   .stat { min-width: 38px; }
-  .brand h1 { font-size: 1.1rem; }
-  .brand-sub { letter-spacing: 0.15em; }
+  .brand { max-width: 210px; }
+  .brand h1 { font-size: 0.95rem; }
   .hud { padding: 8px 12px; gap: 10px; }
   .hud-right { gap: 8px; }
   .timer { font-size: 1.5rem; }

@@ -20,10 +20,24 @@
   <section id="boot" class="screen">
     <div class="boot-box">
       <pre id="boot-log"></pre>
-      <h1 class="glitch title-xl" data-text="ROOM 404">ROOM 404</h1>
-      <p class="subtitle">THE FORGOTTEN LAB</p>
-      <button id="start" class="btn btn-primary pulse" disabled>INITIALIZING...</button>
-      <p class="boot-tip">Headphones recommended &middot; <a href="/">version select</a></p>
+      <h1 class="glitch title-xl" data-text="ESCAPE//AI">ESCAPE//AI</h1>
+      <p class="subtitle">ECHO WILL BUILD YOUR PRISON</p>
+      <div class="mode-buttons">
+        <button id="start-ai" class="btn btn-primary pulse" disabled>INITIALIZING...</button>
+        <button id="start-classic" class="btn" disabled>CLASSIC: ROOM 404</button>
+      </div>
+      <p class="boot-tip" id="mode-tip">A new AI-generated room every game &middot; Headphones recommended &middot; <a href="/">version select</a></p>
+    </div>
+  </section>
+
+  <!-- Room generation screen -->
+  <section id="forge" class="screen hidden">
+    <div class="forge-box">
+      <div class="forge-ring"><span></span><span></span><span></span></div>
+      <h2 class="glitch" data-text="CONSTRUCTING ROOM">CONSTRUCTING ROOM</h2>
+      <pre id="forge-log"></pre>
+      <p class="forge-time" id="forge-time">0s</p>
+      <button id="forge-cancel" class="btn btn-ghost">PLAY CLASSIC INSTEAD</button>
     </div>
   </section>
 
@@ -31,8 +45,8 @@
   <div id="app" class="hidden">
     <header class="hud">
       <div class="brand">
-        <h1 class="glitch" data-text="ROOM 404">ROOM 404</h1>
-        <span class="brand-sub">THE FORGOTTEN LAB <em>v2</em></span>
+        <h1 id="room-name" title="">ROOM</h1>
+        <span class="brand-sub"><span id="room-theme"></span> <em id="room-tag">v2</em></span>
       </div>
 
       <div class="hud-center">
@@ -96,7 +110,7 @@
   <!-- Keypad modal -->
   <div id="keypad" class="modal hidden" role="dialog" aria-label="Drawer keypad">
     <div class="modal-box keypad-box">
-      <h3>DRAWER KEYPAD</h3>
+      <h3 id="keypad-title">KEYPAD</h3>
       <div class="keypad-display" id="keypad-display">____</div>
       <div class="keypad-grid" id="keypad-grid"></div>
       <button class="btn btn-ghost" data-close>CANCEL</button>
@@ -106,7 +120,7 @@
   <!-- Password modal -->
   <div id="password" class="modal hidden" role="dialog" aria-label="Terminal password">
     <div class="modal-box">
-      <h3>ECHO SECURITY</h3>
+      <h3 id="password-title">ECHO SECURITY</h3>
       <p class="terminal-text">ENTER PASSWORD_</p>
       <form id="password-form">
         <input id="password-input" maxlength="20" autocomplete="off" spellcheck="false" />
@@ -124,7 +138,10 @@
       <h2 id="end-title" class="glitch" data-text="ESCAPED">ESCAPED</h2>
       <p id="end-text"></p>
       <div class="end-stats" id="end-stats"></div>
-      <button class="btn btn-primary" id="btn-again">PLAY AGAIN</button>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="btn-again-ai">NEW AI ROOM</button>
+        <button class="btn" id="btn-again-classic">CLASSIC ROOM</button>
+      </div>
     </div>
   </div>
 

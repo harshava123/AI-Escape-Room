@@ -1,13 +1,14 @@
 {
   "name": "ai-escape-room",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "An AI-powered text escape room using Google Gemini as the game master.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test \"tests/*.test.js\""
+    "test": "node --test \"tests/*.test.js\"",
+    "playtest": "node scripts/playtest.js"
   },
   "engines": {
     "node": ">=20.12"

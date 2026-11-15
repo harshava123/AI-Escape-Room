@@ -1,20 +1,29 @@
-import { ICONS } from './icons.js';
+import { ICONS, icon } from './icons.js';
 import { initAudio, sfx, toggleMute, isMuted } from './audio.js';
 import { burst, confetti, floatText, setMood } from './fx.js';
 
 const $ = (sel) => document.querySelector(sel);
 
-const OBJECTS = [
-  { id: 'door', label: 'Steel Door', name: 'steel door', actions: [['Examine', 'examine the door'], ['Open', 'open the door']] },
-  { id: 'clock', label: 'Clock', name: 'clock', actions: [['Examine', 'examine the clock']] },
-  { id: 'poster', label: 'Poster', name: 'poster', actions: [['Read', 'read the poster']] },
-  { id: 'desk', label: 'Desk', name: 'desk', actions: [['Examine', 'examine the desk']] },
-  { id: 'drawer', label: 'Drawer', name: 'drawer', actions: [['Examine', 'examine the drawer'], ['Enter code...', '#keypad'], ['Open', 'open the drawer']] },
-  { id: 'bookshelf', label: 'Bookshelf', name: 'bookshelf', actions: [['Examine', 'examine the bookshelf']] },
-  { id: 'terminal', label: 'Terminal', name: 'terminal', actions: [['Examine', 'examine the terminal'], ['Enter password...', '#password']] },
-  { id: 'vent', label: 'Air Vent', name: 'air vent', actions: [['Examine', 'examine the vent'], ['Open', 'open the vent'], ['Take keycard', 'take the keycard']] },
-  { id: 'plant', label: 'Plant', name: 'potted plant', actions: [['Examine', 'examine the plant'], ['Dig in the soil', 'take the rusty key']] },
-];
+// Room text can come from the AI, so it is always escaped before going into innerHTML.
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const room = () => ui.game.room;
+const objName = (role) => room().objects.find((o) => o.id === role)?.name || role;
+
+// Context-menu actions for each puzzle role, phrased with the room's own names.
+function objectActions(obj) {
+  const n = obj.name;
+  const r = room();
+  const examine = ['Examine', `examine the ${n}`];
+  switch (obj.id) {
+    case 'exit': return [examine, ['Open', `open the ${n}`]];
+    case 'lockbox': return [examine, ['Enter code...', '#keypad'], ['Open', `open the ${n}`]];
+    case 'passwordLock': return [examine, ['Enter password...', '#password']];
+    case 'compartment': return [examine, ['Open', `open the ${n}`], [`Take ${r.items.exitKey.name}`, `take the ${r.items.exitKey.name}`]];
+    case 'decoy': return [examine, ['Search it', `take the ${r.items.decoyItem.name}`]];
+    default: return [examine];
+  }
+}
 
 const GOOD_EVENTS = new Set(['unlock', 'reveal', 'item', 'clue', 'escaped']);
 const BAD_EVENTS = new Set(['wrong_code', 'locked', 'missing_item', 'red_herring', 'unknown_target', 'timeout']);
@@ -28,17 +37,20 @@ const ui = {
   deadline: 0,
   lastTick: null,
   ended: false,
+  mode: 'ai',
+  aiEnabled: false,
   history: [],
   historyIdx: -1,
 };
 
 /* ---------------- API ---------------- */
 
-async function api(path, body = {}) {
+async function api(path, body = {}, signal) {
   const res = await fetch(`/api/v2/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   const data = await res.json().catch(() => ({ error: 'Invalid server response.' }));
   if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status });
@@ -96,11 +108,12 @@ function addTrace(el, meta) {
 function renderHotspots() {
   const wrap = $('#hotspots');
   wrap.innerHTML = '';
-  for (const obj of OBJECTS) {
+  for (const obj of room().objects) {
     const btn = document.createElement('button');
     btn.className = 'hotspot';
     btn.dataset.id = obj.id;
-    btn.innerHTML = `${ICONS[obj.id]}<span>${obj.label}</span><i class="led"></i>`;
+    btn.title = obj.name;
+    btn.innerHTML = `${icon(obj.icon)}<span>${esc(obj.name)}</span><i class="led"></i>`;
     btn.addEventListener('click', (e) => openContext(obj, e));
     wrap.appendChild(btn);
   }
@@ -134,7 +147,7 @@ function renderState() {
       slot.classList.add('filled');
       slot.dataset.id = item.id;
       slot.title = item.description;
-      slot.innerHTML = `${ICONS[item.id]}<span>${item.name}</span>`;
+      slot.innerHTML = `${icon(item.icon)}<span>${esc(item.name)}</span>`;
       if (ui.selectedItem === item.id) slot.classList.add('selected');
       slot.addEventListener('click', () => selectItem(item));
     } else {
@@ -144,7 +157,7 @@ function renderState() {
   }
 
   $('#objectives').innerHTML = g.stages
-    .map((s, i) => `<li class="${s.done ? 'done' : i === g.stageIndex ? 'current' : ''}">${s.title}</li>`)
+    .map((s, i) => `<li class="${s.done ? 'done' : i === g.stageIndex ? 'current' : ''}">${esc(s.title)}</li>`)
     .join('');
 
   $('#achievements').innerHTML = g.achievements.length
@@ -174,9 +187,9 @@ function selectItem(item) {
 function openContext(obj, e) {
   sfx.click();
   const ctx = $('#ctx');
-  ctx.innerHTML = `<h4>${obj.label.toUpperCase()}</h4>`;
+  ctx.innerHTML = `<h4>${esc(obj.name.toUpperCase())}</h4>`;
 
-  const actions = [...obj.actions];
+  const actions = objectActions(obj);
   if (ui.selectedItem) {
     const item = ui.game.inventory.find((i) => i.id === ui.selectedItem);
     actions.unshift([`Use ${item.name} here`, `use ${item.name} on ${obj.name}`, 'use']);
@@ -347,6 +360,7 @@ let keypadCode = '';
 function openKeypad() {
   keypadCode = '';
   updateKeypad();
+  $('#keypad-title').textContent = objName('lockbox').toUpperCase();
   document.activeElement?.blur();
   $('#keypad').classList.remove('hidden');
 }
@@ -370,7 +384,7 @@ function pressKey(k) {
     }
     const code = keypadCode;
     closeModals();
-    send(`enter ${code} on the drawer`);
+    send(`enter ${code} on the ${objName('lockbox')}`);
     return;
   } else if (keypadCode.length < 4) keypadCode += k;
   updateKeypad();
@@ -389,6 +403,7 @@ function buildKeypad() {
 
 function openPassword() {
   $('#password-input').value = '';
+  $('#password-title').textContent = objName('passwordLock').toUpperCase();
   $('#password').classList.remove('hidden');
   setTimeout(() => $('#password-input').focus(), 50);
 }
@@ -406,8 +421,8 @@ function showEnd(won) {
   $('#end-title').textContent = won ? 'ESCAPED' : 'TERMINATED';
   $('#end-title').dataset.text = won ? 'ESCAPED' : 'TERMINATED';
   $('#end-text').textContent = won
-    ? 'The lockdown is lifted. ECHO powers down as you step into the night.'
-    : 'Time ran out. ECHO seals the lab forever... or until you try again.';
+    ? `You escaped ${room().name}. ECHO is already designing a harder prison...`
+    : `Time ran out. ECHO seals ${room().name} forever... or until you try again.`;
   const used = Math.round((15 * 60 * 1000 - g.timeLeftMs) / 1000);
   $('#end-stats').innerHTML = `
     ${won ? `<div class="score"><span>SCORE</span><b>${g.score}</b></div>` : ''}
@@ -448,27 +463,93 @@ function tickTimer() {
 
 /* ---------------- Game lifecycle ---------------- */
 
-async function newGame() {
+const FORGE_STEPS = [
+  'Choosing a setting nobody has escaped before',
+  'Hiding a 4-digit code in plain sight',
+  'Forging the first lock',
+  'Writing invisible ink',
+  'Teaching the decoy to lie',
+  'Validating that the room is solvable',
+  'Checking for leaked secrets',
+];
+
+// Shows the "constructing room" screen while Gemini designs a room; resolves with the game or null if cancelled.
+async function forgeRoom() {
+  const forge = $('#forge');
+  const log = $('#forge-log');
+  const controller = new AbortController();
+  const started = Date.now();
+  let step = 0;
+  log.textContent = '';
+  forge.classList.remove('hidden');
+
+  const addStep = () => {
+    if (step < FORGE_STEPS.length) {
+      log.textContent += `> ${FORGE_STEPS[step++]}...\n`;
+      sfx.blip();
+    }
+  };
+  addStep();
+  const stepTimer = setInterval(addStep, 1800);
+  const clock = setInterval(() => ($('#forge-time').textContent = `${Math.round((Date.now() - started) / 1000)}s`), 250);
+  const onCancel = () => controller.abort();
+  $('#forge-cancel').addEventListener('click', onCancel, { once: true });
+
+  try {
+    return await api('new', { mode: 'ai' }, controller.signal);
+  } catch (err) {
+    if (err.name === 'AbortError') return null;
+    throw err;
+  } finally {
+    clearInterval(stepTimer);
+    clearInterval(clock);
+    $('#forge-cancel').removeEventListener('click', onCancel);
+    forge.classList.add('hidden');
+  }
+}
+
+function renderRoomHeader(r) {
+  const rm = ui.game.room;
+  $('#room-name').textContent = rm.name;
+  $('#room-name').title = rm.name;
+  $('#room-theme').textContent = rm.theme;
+  const tag = $('#room-tag');
+  tag.textContent = rm.aiGenerated ? 'AI GENERATED' : 'CLASSIC';
+  tag.className = rm.aiGenerated ? 'ai' : '';
+  const badge = $('#ai-badge');
+  badge.textContent = r.ai.enabled ? 'AI: GEMINI ONLINE' : 'AI: OFFLINE MODE';
+  badge.className = 'ai-badge ' + (r.ai.enabled ? 'on' : 'off');
+}
+
+async function newGame(mode = ui.mode) {
+  ui.mode = mode;
   ui.ended = false;
   ui.selectedItem = null;
-  ui.game = null;
-  $('#log').innerHTML = '';
   $('#end').classList.add('hidden');
   setMood('#00f0ff');
   sfx.restoreAmbient();
 
   try {
-    const r = await api('new');
+    let r = mode === 'ai' && ui.aiEnabled ? await forgeRoom() : null;
+    if (!r) r = await api('new', { mode: 'classic' });
+
+    ui.game = null;
+    $('#log').innerHTML = '';
     ui.sessionId = r.sessionId;
     ui.game = r.state;
     syncTimer();
-    const badge = $('#ai-badge');
-    badge.textContent = r.ai.enabled ? 'AI: GEMINI ONLINE' : 'AI: OFFLINE MODE';
-    badge.className = 'ai-badge ' + (r.ai.enabled ? 'on' : 'off');
+    renderRoomHeader(r);
+    renderHotspots();
     renderState();
+
+    if (r.state.room.aiGenerated) {
+      sfx.success();
+      addEntry('system', `--- NEW ROOM GENERATED BY GEMINI IN ${(r.ai.generationMs / 1000).toFixed(1)}s - NO ONE HAS PLAYED IT BEFORE ---`);
+    }
+    if (r.notice) addEntry('system', r.notice);
     addEntry('system', '--- LOCKDOWN INITIATED: 15:00 ON THE CLOCK ---');
     await typeOut(addEntry('ai'), r.narration);
-    if (!r.ai.enabled) addEntry('system', 'No GEMINI_API_KEY found - running with the built-in narrator. Add a key to .env for AI narration.');
+    if (!r.ai.enabled) addEntry('system', 'No GEMINI_API_KEY found - running with the built-in narrator. Add a key to .env for AI rooms and narration.');
   } catch (err) {
     addEntry('system', `Could not reach the server: ${err.message}`);
   }
@@ -486,7 +567,9 @@ async function boot() {
   try {
     ai = (await (await fetch('/api/health')).json()).ai.enabled;
   } catch {}
+  ui.aiEnabled = ai;
   lines.push(`Gemini language uplink ........... ${ai ? 'ONLINE' : 'OFFLINE (fallback narrator)'}`);
+  lines.push(`Room generator ................... ${ai ? 'READY' : 'UNAVAILABLE (classic room only)'}`);
   lines.push('', 'WARNING: subject is awake.');
 
   const log = $('#boot-log');
@@ -498,23 +581,32 @@ async function boot() {
     log.textContent += '\n';
     await new Promise((r) => setTimeout(r, 120));
   }
-  const start = $('#start');
-  start.disabled = false;
-  start.textContent = 'PRESS START';
+  const startAi = $('#start-ai');
+  startAi.disabled = !ai;
+  startAi.textContent = ai ? 'GENERATE NEW ROOM' : 'AI ROOMS NEED A KEY';
+  $('#start-classic').disabled = false;
+  if (!ai) {
+    startAi.classList.remove('pulse');
+    $('#start-classic').classList.add('btn-primary', 'pulse');
+    $('#mode-tip').innerHTML = 'Add GEMINI_API_KEY to .env to unlock AI-generated rooms &middot; <a href="/">version select</a>';
+  }
+}
+
+function startFromBoot(mode) {
+  initAudio();
+  sfx.boot();
+  $('#boot').classList.add('boot-out');
+  setTimeout(() => {
+    $('#boot').classList.add('hidden');
+    $('#app').classList.remove('hidden');
+    $('#app').classList.add('boot-in');
+    newGame(mode);
+  }, 650);
 }
 
 function bindEvents() {
-  $('#start').addEventListener('click', async () => {
-    initAudio();
-    sfx.boot();
-    $('#boot').classList.add('boot-out');
-    setTimeout(() => {
-      $('#boot').classList.add('hidden');
-      $('#app').classList.remove('hidden');
-      $('#app').classList.add('boot-in');
-      newGame();
-    }, 650);
-  });
+  $('#start-ai').addEventListener('click', () => startFromBoot('ai'));
+  $('#start-classic').addEventListener('click', () => startFromBoot('classic'));
 
   $('#cmd-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -556,13 +648,14 @@ function bindEvents() {
     sfx.boot();
     newGame();
   });
-  $('#btn-again').addEventListener('click', newGame);
+  $('#btn-again-ai').addEventListener('click', () => newGame('ai'));
+  $('#btn-again-classic').addEventListener('click', () => newGame('classic'));
 
   $('#password-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const pw = $('#password-input').value.replace(/[^a-z0-9]/gi, '');
     closeModals();
-    if (pw) send(`type ${pw} into the terminal`);
+    if (pw) send(`type ${pw} into the ${objName('passwordLock')}`);
   });
 
   for (const b of document.querySelectorAll('[data-close]')) b.addEventListener('click', closeModals);
@@ -591,6 +684,5 @@ function bindEvents() {
 }
 
 buildKeypad();
-renderHotspots();
 bindEvents();
 boot();
